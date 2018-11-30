@@ -6,59 +6,12 @@ import (
 	"testing"
 )
 
-func sliceEq(xs, ys []float64) bool {
-	if len(xs) != len(ys) {
-		return false
-	}
-	for i := range xs {
-		if xs[i] != ys[i] {
-			return false
-		}
-	}
-
-	return true
-}
-
 func randSlice(n int) []float64 {
 	xs := make([]float64, n)
 	for i := range xs {
 		xs[i] = rand.Float64()
 	}
 	return xs
-}
-
-func TestReverse(t *testing.T) {
-	if !sliceEq([]float64{1, 2, 3, 4, 5}, Reverse([]float64{5, 4, 3, 2, 1})) ||
-		!sliceEq([]float64{2, 3, 4, 5}, Reverse([]float64{5, 4, 3, 2})) {
-		t.Errorf("Welp, I hope you're proud of yourself.")
-	}
-}
-
-func BenchmarkReverse10(b *testing.B) {
-	xs := make([]float64, 10)
-	b.SetBytes(80)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Reverse(xs)
-	}
-}
-
-func BenchmarkReverse1000(b *testing.B) {
-	xs := make([]float64, 1000)
-	b.SetBytes(8000)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Reverse(xs)
-	}
-}
-
-func BenchmarkReverse1000000(b *testing.B) {
-	xs := make([]float64, 1000000)
-	b.SetBytes(8000000)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Reverse(xs)
-	}
 }
 
 func BenchmarkShell10(b *testing.B) {
