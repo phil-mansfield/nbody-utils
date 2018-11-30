@@ -193,3 +193,45 @@ func TestIntLeq(t *testing.T) {
 		t.Errorf("IntLeq(%g, %g) = %v, not %v.", xs, x0, ok, res)
 	}	
 }
+
+func TestAnd(t * testing.T) {
+	x1 := []bool{true, true, false, false}
+	x2 := []bool{false, true, true, true}
+	x3 := []bool{true, true, true, false}
+
+	res := []bool{false, true, false, false}
+	out := And(x1, x2, x3)
+
+	if !boolSliceEq(out, res) {
+		t.Errorf("And(%v, %v, %v) = %v, not %v.", x1, x2, x3, out, res)
+	}
+}
+
+func TestOr(t * testing.T) {
+	x1 := []bool{true, true, false, false}
+	x2 := []bool{false, true, true, false}
+	x3 := []bool{true, true, true, false}
+
+	res := []bool{true, true, true, false}
+	out := Or(x1, x2, x3)
+
+	if !boolSliceEq(out, res) {
+		t.Errorf("And(%v, %v, %v) = %v, not %v.", x1, x2, x3, out, res)
+	}
+}
+
+func TestNot(t *testing.T) {
+	xs := []bool{true, false, true, false, true}
+	res := []bool{false, true, false, true, false}
+	
+	ok := Not(xs)
+	if !boolSliceEq(ok, res) {
+		t.Errorf("Not(%v) = %v, not %v.", xs, ok, res)
+	}
+
+	out := make([]bool, 5)
+	ok = Not(xs, out)
+	if !boolSliceEq(out, res) || !boolSliceEq(out, ok) {
+		t.Errorf("Not(%v) = %v, not %v.", xs, ok, res)
+	}	
+}

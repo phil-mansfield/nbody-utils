@@ -120,3 +120,62 @@ func IntGeq(xs []int, x0 int, out ...[]bool) []bool {
 	}
 	return ok
 }
+
+// And returns a bool array corresponding an element-by-element && applied to
+// all input arrays. Unlike other functions here it can't take an optional
+// output argument because of the variadic input.
+func And(xs ...[]bool) []bool {
+	if len(xs) == 0 {
+		panic("No input given to And.")
+	}
+
+	out := make([]bool, len(xs[0]))
+	for i := range out {
+		out[i] = true
+	}
+
+	for j := range xs {
+		if len(xs[j]) != len(out) {
+			panic(fmt.Sprintf("Argument %d of And() has length %d, not %d.",
+				j, len(out), len(xs[j])))
+		}
+		for i := range out {
+			out[i] = out[i] && xs[j][i]
+		}
+	}
+
+	return out
+}
+
+// Or returns a bool array corresponding an element-by-element || applied to
+// all input arrays. Unlike other functions here it can't take an optional
+// output argument because of the variadic input.
+func Or(xs ...[]bool) []bool {
+	if len(xs) == 0 {
+		panic("No input given to And.")
+	}
+
+	out := make([]bool, len(xs[0]))
+
+	for j := range xs {
+		if len(xs[j]) != len(out) {
+			panic(fmt.Sprintf("Argument %d of And() has length %d, not %d.",
+				j, len(out), len(xs[j])))
+		}
+		for i := range out {
+			out[i] = out[i] || xs[j][i]
+		}
+	}
+
+	return out
+}
+
+// Not applies element-by-element ! to an input array. It takes an optional
+// output array.
+func Not(xs []bool, out ...[]bool) []bool {
+	ok := getOutput(out, len(xs))
+	for i := range xs {
+		ok[i] = !xs[i]
+	}
+	return ok
+}
