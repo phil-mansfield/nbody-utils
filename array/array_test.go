@@ -30,7 +30,18 @@ func boolSliceEq(xs, ys []bool) bool {
 	return true
 }
 
+func intSliceEq(xs, ys []int) bool {
+	if len(xs) != len(ys) {
+		return false
+	}
+	for i := range xs {
+		if xs[i] != ys[i] {
+			return false
+		}
+	}
 
+	return true
+}
 
 func TestReverse(t *testing.T) {
 	if !sliceEq([]float64{1, 2, 3, 4, 5}, Reverse([]float64{5, 4, 3, 2, 1})) ||
@@ -234,4 +245,61 @@ func TestNot(t *testing.T) {
 	if !boolSliceEq(out, res) || !boolSliceEq(out, ok) {
 		t.Errorf("Not(%v) = %v, not %v.", xs, ok, res)
 	}	
+}
+
+func TestOrder(t *testing.T) {
+	xs := []float64{4, 5, 2, 0, 1, 3}
+	order := []int{4, 5, 2, 0, 1, 3}
+	res := []float64{0, 1, 2, 3, 4, 5}
+	
+	ys := Order(xs, order)
+	if !sliceEq(ys, res) {
+		t.Errorf("Order(%g, %d) = %g, not %g.", xs, order, ys, res)
+	}
+
+	out := make([]float64, 6)
+	ys = Order(xs, order, out)
+	if !sliceEq(out, res) || !sliceEq(out, ys) {
+		t.Errorf("Order(%g, %d) = %g, not %g.", xs, order, ys, res)
+	}	
+}
+
+func TestIntOrder(t *testing.T) {
+	xs := []int{4, 5, 2, 0, 1, 3}
+	order := []int{4, 5, 2, 0, 1, 3}
+	res := []int{0, 1, 2, 3, 4, 5}
+	
+	ys := IntOrder(xs, order)
+	if !intSliceEq(ys, res) {
+		t.Errorf("Order(%g, %d) = %g, not %g.", xs, order, ys, res)
+	}
+
+	out := make([]int, 6)
+	ys = IntOrder(xs, order, out)
+	if !intSliceEq(out, res) || !intSliceEq(out, ys) {
+		t.Errorf("Order(%g, %d) = %g, not %g.", xs, order, ys, res)
+	}	
+}
+
+
+func TestCut(t *testing.T) {
+	xs := []float64{1, 2, 3, 4, 5}
+	ok := []bool{true, true, false, false, true}
+	res := []float64{1, 2, 5}
+	out := Cut(xs, ok)
+
+	if !sliceEq(out, res) {
+		t.Errorf("Cut(%g, %v) = %g, not %g", xs, ok, out, res)
+	}
+}
+
+func TestIntCut(t *testing.T) {
+	xs := []int{1, 2, 3, 4, 5}
+	ok := []bool{true, true, false, false, true}
+	res := []int{1, 2, 5}
+	out := IntCut(xs, ok)
+
+	if !intSliceEq(out, res) {
+		t.Errorf("Cut(%d, %v) = %g, not %g", xs, ok, out, res)
+	}
 }
