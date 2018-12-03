@@ -1,5 +1,16 @@
 package box
 
+func Bound(dx, L float64) float64 {
+	if dx > L { return dx - L }
+	if dx < 0 { return dx + L }
+	return dx
+}
+
+func SymBound(dx, L float64) float64 {
+	if dx > +L/2 { return dx - L }
+	if dx < -L/2 { return dx + L }
+	return dx
+}
 
 // Bounds is a cell-aligned bounding box.
 type Bounds struct {

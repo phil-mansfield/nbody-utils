@@ -13,25 +13,25 @@ const (
 // To do this, it does not allow for host list identifications and does not
 // memoize results.
 type Finder struct {
-	g          *Grid
-	gBuf       []int
-	idxBuf     []int
-	dr2Buf     []float64
-	xs, ys, zs []float64
-	bufi       int
+	g      *Grid
+	gBuf   []int
+	idxBuf []int
+	dr2Buf []float64
+	x      [][3]float64
+	bufi   int
 }
 
 // NewSubhaloFinder creates a new subhalo finder corresponding to the given
 // Grid. The Grid contains halos from group A.
-func NewFinder(L float64, xs, ys, zs []float64) *Finder {
-	g := NewGrid(defaultFinderCells, L, len(xs))
+func NewFinder(L float64, x [][3]float64) *Finder {
+	g := NewGrid(defaultFinderCells, L, len(x))
 	
 	f := &Finder{
 		g: g,
 		gBuf: make([]int, g.MaxLength()),
 		idxBuf: make([]int, len(g.Next)),
 		dr2Buf: make([]float64, len(g.Next)),
-		xs: xs, ys: ys, zs: zs,
+		x: x,
 	}
 
 	return f
@@ -41,9 +41,7 @@ func NewFinder(L float64, xs, ys, zs []float64) *Finder {
 
 // FindSubhalos links grid halos (from group A) to a target halo (from group B).
 // Returned arrays are internal buffers, so please treat them kindly.
-func (sf *Finder) Find(x0, y0, z0, r0 float64) (
-	idx []int, dr2 []float64,
-) {
+func (sf *Finder) Find(pos [3]float64, r0 float64) []int {
 	sf.bufi = 0
 	sf.idxBuf = sf.idxBuf[:cap(sf.idxBuf)]
 	sf.dr2Buf = sf.dr2Buf[:cap(sf.dr2Buf)]
@@ -51,7 +49,6 @@ func (sf *Finder) Find(x0, y0, z0, r0 float64) (
 	b := &Bounds{}
 	c := sf.g.Cells
 
-	pos := [3]float64{x0, y0, z0}
 	b.SphereBounds(pos, r0, sf.g.cw, sf.g.Width)
 
 	for dz := 0; dz < b.Span[2]; dz++ {
@@ -74,19 +71,19 @@ func (sf *Finder) Find(x0, y0, z0, r0 float64) (
 				idx := zOff + yOff + x
 
 				sf.gBuf = sf.g.ReadIndexes(idx, sf.gBuf)
-				sf.addSubhalos(sf.gBuf, x0, y0, z0, r0, sf.g.Width)
+				sf.addSubhalos(sf.gBuf, pos[0], pos[1], pos[2], r0, sf.g.Width)
 			}
 		}
 	}
 
-	return sf.idxBuf[:sf.bufi], sf.dr2Buf[:sf.bufi]
+	return sf.idxBuf[:sf.bufi]
 }
 
 func (sf *Finder) addSubhalos(
 	idxs []int, xh, yh, zh, rh float64, L float64,
 ) {
 	for _, j := range idxs {
-		sx, sy, sz := sf.xs[j], sf.ys[j], sf.zs[j]
+		sx, sy, sz := sf.x[j][0], sf.x[j][1], sf.x[j][2]
 		dx, dy, dz, dr := xh-sx, yh-sy, zh-sz, rh
 
 		if dx > +L/2 { dx -= L }
