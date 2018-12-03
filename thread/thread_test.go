@@ -88,7 +88,7 @@ func SplitArrayJumpSum(xs []float64, jobs int) float64 {
 				jobSums[worker] += xs[i]
 			}
 		},
-		Contiguous(),
+		Jump(),
 	)
 
 	sum := 0.0
