@@ -26,7 +26,7 @@ func NewGrid(cells int, width float64, dataLen int) *Grid {
 	for i := range g.Heads {
 		g.Heads[i] = tail
 	}
-
+	
 	return g
 }
 
@@ -40,9 +40,9 @@ func (g *Grid) Length(idx int) int {
 	return n
 }
 
-func (g *Grid) Insert(xs, ys, zs []float64) {
+func (g *Grid) Insert(xs [][3]float64) {
 	for i := range xs {
-		x, y, z := xs[i], ys[i], zs[i]
+		x, y, z := xs[i][0], xs[i][1], xs[i][2]
 		
 		if x >= g.Width {
 			x -= g.Width
