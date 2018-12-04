@@ -3,6 +3,7 @@ now it's just a loose wrapper around Shellfish's VectorBuffer struct.*/
 package io
 
 import (
+	"fmt"
 	"runtime"
 	"github.com/phil-mansfield/nbody-utils/box"
 	"github.com/phil-mansfield/nbody-utils/thread"
@@ -41,16 +42,18 @@ func (f *Files) Read(i int, subsample ...int) (
 	f.x, f.v = expandVec(f.x, n), expandVec(f.v, n)
 	f.m, f.id =  expandFloat(f.m, n), expandInt(f.id, n)
 
-	for i := 0; i < len(xp); i++ {
+	fmt.Println(len(f.x))
+	
+	for i := 0; i < len(f.x); i++ {
 		for j := 0; j < 3; j++ {
-			xp[i][j] = float64(x[i*sub][j])
-			vp[i][j] = float64(v[i*sub][j])
+			f.x[i][j] = float64(x[i*sub][j])
+			f.v[i][j] = float64(v[i*sub][j])
 		}
-		mp[i] = float64(m[i*sub])
-		idp[i] = int(id[i*sub])
+		f.m[i] = float64(m[i*sub])
+		f.id[i] = int(id[i*sub])
 	}
 
-	return xp, vp, mp, idp
+	return f.x, f.v, f.m, f.id
 }
 
 type HaloWork func(
@@ -76,11 +79,14 @@ func (f *Files) fileLoop(
 	if hv == nil { hv = make([][3]float64, len(hx)) }
 
 	xp, vp, mp, idp := f.Read(iFile, subsample...)
-
+	
 	// Make finder; need the simulation width
 	hd := &sio.Header{}
-	f.buf.ReadHeader(f.Names[iFile], hd)
-	finder := box.NewFinder(hd.TotalWidth, xp)
+	finders := make([]*box.Finder, runtime.NumCPU())
+	for i := range finders {
+		f.buf.ReadHeader(f.Names[iFile], hd)
+		finders[i] = box.NewFinder(hd.TotalWidth, xp)
+	}
 
 	xbuf, vbuf := [][3]float64{}, [][3]float64{}
 	mbuf, idbuf := []float64{}, []int{}
@@ -88,8 +94,8 @@ func (f *Files) fileLoop(
 	loopWork := func (worker, istart, iend, istep int) {
 		for ih := istart; ih < iend; ih += istep { // halo index
 			// Indices of particles in halo
-			idx := finder.Find(hx[ih], hr[ih])
-
+			idx := finders[worker].Find(hx[ih], hr[ih])
+			
 			// resize buffers
 			xbuf, vbuf = expandVec(xbuf, len(idx)), expandVec(vbuf, len(idx))
 			mbuf = expandFloat(mbuf, len(idx))
@@ -105,10 +111,10 @@ func (f *Files) fileLoop(
 				}
 				mbuf[j] = mp[ip]
 				idbuf[j] = idp[ip]
-
-				// Finally, do the work:
-				work(ih, xbuf, vbuf, mbuf, idbuf)
 			}
+
+			// Finally, do the work:
+			work(ih, xbuf, vbuf, mbuf, idbuf)
 		}
 	}
 	
