@@ -3,7 +3,7 @@ cosmological simulations boxes.*/
 package box
 
 const (
-	defaultFinderCells = 250
+	defaultFinderCells = 150
 )
 
 // SplitSubhaloFinder finds the halos in group A that are within the radii of
@@ -25,6 +25,7 @@ type Finder struct {
 // Grid. The Grid contains halos from group A.
 func NewFinder(L float64, x [][3]float64) *Finder {
 	g := NewGrid(defaultFinderCells, L, len(x))
+	g.Insert(x)
 	
 	f := &Finder{
 		g: g,
