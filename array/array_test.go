@@ -50,6 +50,13 @@ func TestReverse(t *testing.T) {
 	}
 }
 
+func TestIntReverse(t *testing.T) {
+	if !sliceEq([]int{1, 2, 3, 4, 5}, IntReverse([]int{5, 4, 3, 2, 1})) ||
+		!sliceEq([]int{2, 3, 4, 5}, IntReverse([]int{5, 4, 3, 2})) {
+		t.Errorf("Welp, I hope you're proud of yourself.")
+	}
+}
+
 func BenchmarkReverse10(b *testing.B) {
 	xs := make([]float64, 10)
 	b.SetBytes(80)

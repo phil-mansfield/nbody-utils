@@ -18,7 +18,7 @@ func Reverse(xs []float64) []float64 {
 }
 
 // IntReverse reverses a slice in place (and returns it for convenience).
-func IntReverse(xs []float64) []float64 {
+func IntReverse(xs []int) []int {
 	n1, n2 := len(xs)-1, len(xs)/2
 	for i := 0; i < n2; i++ {
 		xs[i], xs[n1-i] = xs[n1-i], xs[i]
@@ -235,7 +235,8 @@ func Order(xs []float64, order []int, out ...[]float64) []float64 {
 	}
 
 	for i := range order {
-		ys[order[i]] = xs[i]
+		//ys[order[i]] = xs[i]
+		ys[i] = xs[order[i]]
 	}
 	
 	return ys

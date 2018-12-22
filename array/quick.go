@@ -123,43 +123,39 @@ func quickIndex(xs []float64, idx []int) {
 		shellSortIndex(xs, idx)
 	} else {
 		pivIdx := partitionIndex(xs, idx)
-		quickIndex(xs[0:pivIdx], idx[0:pivIdx])
-		quickIndex(xs[pivIdx:len(xs)], idx[pivIdx:len(xs)])
+		quickIndex(xs, idx[0:pivIdx])
+		quickIndex(xs, idx[pivIdx:len(idx)])
 	}	
 }
 
 func partitionIndex(xs []float64, idx []int) int {
-	n, n2 := len(xs), len(xs)/2
+	n, n2 := len(idx), len(idx)/2
 	// Take three values. The median will be the pivot, the other two will
 	// be sentinel values so that we can avoid bounds checks.
-	max, mid, min, maxi, midi, mini := sort3Index(
-		xs[0], xs[n2], xs[n-1], idx[0], idx[n2], idx[n-1],
+	_, _, _, maxi, midi, mini := sort3Index(
+		xs[idx[0]], xs[idx[n2]], xs[idx[n-1]],
+		idx[0], idx[n2], idx[n-1],
 	)
 
-	xs[0], xs[n2], xs[n-1] = min, mid, max
 	idx[0], idx[n2], idx[n-1] = mini, midi, maxi
-	xs[1], xs[n2] = xs[n2], xs[1]
 	idx[1], idx[n2] = idx[n2], idx[1]
-
 	lo, hi := 1, n-1
 	for {
 		lo++
-		for xs[lo] < mid {
+		for xs[idx[lo]] < xs[midi] {
 			lo++
 		}
 		hi--
-		for xs[hi] > mid {
+		for xs[idx[hi]] > xs[midi] {
 			hi--
 		}
 		if hi < lo {
 			break
 		}
-		xs[lo], xs[hi] = xs[hi], xs[lo]
 		idx[lo], idx[hi] = idx[hi], idx[lo]
 	}
 
 	// Swap the pivot into the middle
-	xs[1], xs[hi] = xs[hi], xs[1]
 	idx[1], idx[hi] = idx[hi], idx[1]
 
 	return hi
