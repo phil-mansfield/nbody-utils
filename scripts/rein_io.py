@@ -192,7 +192,7 @@ Other uses to follow.
         print(header.text_header, end="")
     else:
         print("""%s has an unrecognized file extension.
-Currently, only .binh files are recognized.""")
+Currently, only .binh files are recognized.""" % fname)
         exit(1)
 
 
