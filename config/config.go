@@ -53,7 +53,7 @@ need to explicitly check for variables that have not been set.
 
 For additional examples, see the usage in config_test.go
 */
-package parse
+package config
 
 import (
 	"fmt"
