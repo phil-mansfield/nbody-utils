@@ -235,7 +235,6 @@ func Order(xs []float64, order []int, out ...[]float64) []float64 {
 	}
 
 	for i := range order {
-		//ys[order[i]] = xs[i]
 		ys[i] = xs[order[i]]
 	}
 	
@@ -254,7 +253,7 @@ func IntOrder(xs []int, order []int, out ...[]int) []int {
 	}
 
 	for i := range order {
-		ys[order[i]] = xs[i]
+		ys[i] = xs[order[i]]
 	}
 
 	return ys
