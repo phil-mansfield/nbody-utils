@@ -3,7 +3,7 @@ now it's just a loose wrapper around Shellfish's VectorBuffer struct.*/
 package io
 
 import (
-	"fmt"
+	"log"
 	"runtime"
 	"github.com/phil-mansfield/nbody-utils/box"
 	"github.com/phil-mansfield/nbody-utils/thread"
@@ -28,6 +28,7 @@ func (f *Files) Len() int { return len(f.Names) }
 func (f *Files) Read(i int, subsample ...int) (
 	xp, vp [][3]float64, mp []float64, idp []int,
 ) {
+	log.Printf("%3d/%d", i, f.Len())
 	sub := 1
 	if len(subsample) > 0 { sub = subsample[0] }
 	
@@ -41,8 +42,6 @@ func (f *Files) Read(i int, subsample ...int) (
 
 	f.x, f.v = expandVec(f.x, n), expandVec(f.v, n)
 	f.m, f.id =  expandFloat(f.m, n), expandInt(f.id, n)
-
-	fmt.Println(len(f.x))
 	
 	for i := 0; i < len(f.x); i++ {
 		for j := 0; j < 3; j++ {
@@ -87,11 +86,12 @@ func (f *Files) fileLoop(
 		f.buf.ReadHeader(f.Names[iFile], hd)
 		finders[i] = box.NewFinder(hd.TotalWidth, xp)
 	}
-
-	xbuf, vbuf := [][3]float64{}, [][3]float64{}
-	mbuf, idbuf := []float64{}, []int{}
 	
 	loopWork := func (worker, istart, iend, istep int) {
+		xbuf, vbuf := [][3]float64{}, [][3]float64{}
+		mbuf, idbuf := []float64{}, []int{}
+
+		
 		for ih := istart; ih < iend; ih += istep { // halo index
 			// Indices of particles in halo
 			idx := finders[worker].Find(hx[ih], hr[ih])
@@ -119,6 +119,7 @@ func (f *Files) fileLoop(
 	}
 	
 	thread.SplitArray(len(hx), runtime.NumCPU(), loopWork, thread.Jump())
+	//thread.SplitArray(len(hx), 2, loopWork, thread.Jump())
 }
 
 func expandVec(buf [][3]float64, n int) [][3]float64 {

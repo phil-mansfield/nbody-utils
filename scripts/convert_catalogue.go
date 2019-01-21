@@ -74,7 +74,7 @@ func ParseConfig(fname string) Config {
 	if len(c.ColumnNames) != int(c.Columns) {
 		panic(fmt.Sprintf(
 			"Columns = %d, but len(ColumnNames) = %d.",
-			c.Columns, c.ColumnNames,
+			c.Columns, len(c.ColumnNames),
 		))
 	}
 
