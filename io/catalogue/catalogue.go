@@ -11,8 +11,6 @@ import (
 // TextConfig contains information neccessary for parsing halo catalogues.
 type TextConfig struct {
 	Separator byte // Character used to separated fields
-	Whitespace byte // Character used to space fields.
-	                // May be the same as Separator.
 	Comment byte // Character used to start comments.
 	SkipLines int // Number of lines to skip at the start of file.
 	ColumnNames map[string]int // Map from column names to 
@@ -24,8 +22,7 @@ type TextConfig struct {
 // files.
 var DefaultConfig = TextConfig{
 	Separator: ' ',
-	Whitespace: ' ',
-	Comment: ' ',
+	Comment: '#',
 	SkipLines: 0,
 	ColumnNames: map[string]int{},
 	
