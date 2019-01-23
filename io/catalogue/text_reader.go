@@ -217,6 +217,7 @@ func (t *textReader) bufferedReadInts(
 	lines = trim(lines, t.config.Separator)
 
 	// Increase buffer size if needed
+	for i := range bufs { bufs[i] = bufs[i][:cap(bufs[i])] }
 	avail := len(bufs[0]) - start
 	if avail < len(lines) {
 		for i := range bufs {
@@ -255,6 +256,7 @@ func (t *textReader) bufferedReadFloat64s(
 	lines = trim(lines, t.config.Separator)
 
 	// Increase buffer size if needed
+	for i := range bufs { bufs[i] = bufs[i][:cap(bufs[i])] }
 	avail := len(bufs[0]) - start
 	if avail < len(lines) {
 		for i := range bufs {
@@ -293,6 +295,7 @@ func (t *textReader) bufferedReadFloat32s(
 	lines = trim(lines, t.config.Separator)
 
 	// Increase buffer size if needed
+	for i := range bufs { bufs[i] = bufs[i][:cap(bufs[i])] }
 	avail := len(bufs[0]) - start
 	if avail < len(lines) {
 		for i := range bufs {
