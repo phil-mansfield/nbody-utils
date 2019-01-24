@@ -158,6 +158,103 @@ func TestFloat32Encoder(t *testing.T) {
 	}
 }
 
+func TestIntColumnType(t *testing.T) {
+	tests := []struct{
+		x []int
+		key int64
+		flag ColumnFlag
+	} {
+		{[]int{0, 1}, 0, Int8},
+		{[]int{10, 11}, 10, Int8},
+		{[]int{-10, -9}, -10, Int8},
+
+		{[]int{math.MinInt8, math.MaxInt8}, math.MinInt8, Int8},
+		{[]int{0, math.MaxInt8 - math.MinInt8}, 0, Int8},
+		{[]int{math.MinInt8, math.MaxInt8 + 1}, math.MinInt8, Int16},
+		{[]int{0, math.MaxInt8 - math.MinInt8 + 1}, 0, Int16},
+
+		{[]int{math.MinInt16, math.MaxInt16}, math.MinInt16, Int16},
+		{[]int{0, math.MaxInt16 - math.MinInt16}, 0, Int16},
+		{[]int{math.MinInt16, math.MaxInt16 + 1}, math.MinInt16, Int32},
+		{[]int{0, math.MaxInt16 - math.MinInt16 + 1}, 0, Int32},
+
+		{[]int{math.MinInt32, math.MaxInt32}, math.MinInt32, Int32},
+		{[]int{0, math.MaxInt32 - math.MinInt32}, 0, Int32},
+		{[]int{math.MinInt32, math.MaxInt32 + 1}, math.MinInt32, Int64},
+		{[]int{0, math.MaxInt32 - math.MinInt32 + 1}, 0, Int64},
+
+		{[]int{math.MinInt64, math.MaxInt64}, math.MinInt64, Int64},
+	}
+
+	for i := range tests {
+		flag, key := intColumnType(tests[i].x)
+ 		if key != tests[i].key {
+			t.Errorf("%d) Expected key %d for %d, got %d.",
+				i, tests[i].key, tests[i].x, key)
+		}
+		if flag != tests[i].flag {
+			t.Errorf("%d) Expected flag %d for %d, got %d.",
+				i, tests[i].flag, tests[i].x, flag)
+		}
+	}
+}
+
+func TestFloat64ColumnType(t *testing.T) {
+	tests := []struct{
+		x []float64
+		delta float64
+		key int64
+		flag ColumnFlag
+	} {
+		{[]float64{1.0, 2.0}, 0.0, 0, Float32},
+		{[]float64{1.0, 2.0}, 0.1, 10, QFloat8},
+		{[]float64{1.0, 2.0}, 1e-3, 1000, QFloat16},
+		{[]float64{1.0, 2.0}, 1e-6, 0, Float32},
+		{[]float64{1.0, 2.0}, 1e-10, 0, Float32},
+	}
+
+	for i := range tests {
+		flag, key := float64ColumnType(tests[i].x, tests[i].delta)
+ 		if key != tests[i].key {
+			t.Errorf("%d) Expected key %d for %g, delta=%g, got %g.",
+				i, tests[i].key, tests[i].x, tests[i].delta, key)
+		}
+		if flag != tests[i].flag {
+			t.Errorf("%d) Expected flag %d for %g, delta=%g, got %g.",
+				i, tests[i].flag, tests[i].x, tests[i].delta, flag)
+		}
+	}
+}
+
+func TestLogFloat64ColumnType(t *testing.T) {
+	tests := []struct{
+		x []float64
+		delta float64
+		key int64
+		flag ColumnFlag
+	} {
+		{[]float64{10.0, 100.0}, 0.0, 0, Float32},
+		{[]float64{10.0, 100.0, 0.0}, 0.1, 0, Float32},
+		{[]float64{10.0, 100.0}, 0.1, 10, QLogFloat8},
+		{[]float64{10.0, 100.0}, 1e-3, 1000, QLogFloat16},
+		{[]float64{10.0, 100.0}, 1e-6, 0, Float32},
+		{[]float64{10.0, 100.0}, 1e-10, 0, Float32},
+	}
+
+	for i := range tests {
+		flag, key := logFloat64ColumnType(tests[i].x, tests[i].delta)
+ 		if key != tests[i].key {
+			t.Errorf("%d) Expected key %d for %g, delta=%g, got %d.",
+				i, tests[i].key, tests[i].x, tests[i].delta, key)
+		}
+		if flag != tests[i].flag {
+			t.Errorf("%d) Expected flag %d for %g, delta=%g, got %d.",
+				i, tests[i].flag, tests[i].x, tests[i].delta, flag)
+		}
+	}
+}
+
+
 func float64sAlmostEq(x, y []float64, delta float64) bool {
 	if len(x) != len(y) { return false }
 	

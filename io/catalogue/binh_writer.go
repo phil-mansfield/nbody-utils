@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"os"
 	"strings"
 	"encoding/binary"
 
@@ -56,7 +57,7 @@ func ParseBinhConfig(fname string) BinhConfig {
 	return c
 }
 
-type ColumnFlag int
+type ColumnFlag int64
 const (
 	Float64 ColumnFlag = iota
 	Float32 
@@ -245,7 +246,7 @@ func (enc *BinhEncoder) EncodeFloat64s(
 		if min > x[i] { min = x[i] }
 	}
 
-	qMin := int64(min / delta)
+	qMin := int64(math.Floor(min / delta))
 
 	switch flag {
 	case Float64:
@@ -257,25 +258,28 @@ func (enc *BinhEncoder) EncodeFloat64s(
 	case QFloat64:
 		buf := enc.int64Buffer(len(x))
 		for i := range buf {
-			buf[i] = int64(int64(x[i] / delta) - qMin + math.MinInt64)
+			buf[i] = int64(int64(math.Floor(x[i] / delta)) -
+				qMin + math.MinInt64)
 		}
 		binary.Write(wr, binary.LittleEndian, buf)
 	case QFloat32:
 		buf := enc.int32Buffer(len(x))
 		for i := range buf {
-			buf[i] = int32(int64(x[i] / delta) - qMin + math.MinInt32)
+			buf[i] = int32(int64(math.Floor(x[i] / delta)) -
+				qMin + math.MinInt32)
 		}
 		binary.Write(wr, binary.LittleEndian, buf)
 	case QFloat16:
 		buf := enc.int16Buffer(len(x))
 		for i := range buf {
-			buf[i] = int16(int64(x[i] / delta) - qMin + math.MinInt16)
+			buf[i] = int16(int64(math.Floor(x[i] / delta)) -
+				qMin + math.MinInt16)
 		}
 		binary.Write(wr, binary.LittleEndian, buf)
 	case QFloat8:
 		buf := enc.int8Buffer(len(x))
 		for i := range buf {
-			buf[i] = int8(int64(x[i] / delta) - qMin + math.MinInt8)
+			buf[i] = int8(int64(math.Floor(x[i] / delta)) - qMin + math.MinInt8)
 		}
 		binary.Write(wr, binary.LittleEndian, buf)
 	case QLogFloat64:
@@ -374,5 +378,223 @@ func (enc *BinhEncoder) DecodeFloat32s(
 	buf := enc.float64Buffer(len(out))
 	enc.DecodeFloat64s(flag, float64(delta), key, rd, buf)
 	for i := range out { out[i] = float32(buf[i]) }
+}
+
+////////////////
+// Binh stuff //
+////////////////
+
+const BinhVersion =  2
+
+type BinhFixedWidthHeader struct {
+	Version int64 // Version of the binh format being used
+	Columns int64 // Number of columns in each blocks
+	MassColumn int64 // Column used to order haloes within a blocks
+	Blocks int64 // Number of blocks in the file
+	TextHeaderLength int64 // Number of bytes in the text header
+	TextColumnNamesLength int64 // number of bytes in the 
+}
+
+type BinhHeader struct {
+	BinhFixedWidthHeader
+	// Fields in the actual header
+	Deltas []float64
+	TextHeader []byte
+	TextColumnNames []byte
+	// Fields sroted in the blocks themselves
+	Haloes int64
+	BlockHaloes []int64
+	BlockFlags [][]ColumnFlag
+}
+
+// TextToBinh converts a text file to a binh file.
+func TextToBinh(inName, outName string, config BinhConfig) {
+	// Column information
+	_, isInt, isLog, deltas := parseColumnInfo(config.ColumnInfo)
+	bufIdx, icols, fcols := bufferIndex(isInt)
+
+	// Set up I/O
+	wr, err := os.Create(outName)
+	if err != nil { panic(err.Error()) }
+	rd := TextFile(inName)
+
+	// Write a blank header for now. We'll come back to this later.
+	hd := newBinhHeader(inName, rd.Blocks(), config)
+	binary.Write(wr, binary.LittleEndian, hd.BinhFixedWidthHeader)
+	binary.Write(wr, binary.LittleEndian, hd.Deltas)
+	binary.Write(wr, binary.LittleEndian, hd.TextHeader)
+	binary.Write(wr, binary.LittleEndian, hd.TextColumnNames)
+
+	// Set up buffers
+	ibuf := make([][]int, len(isInt))
+	fbuf := make([][]float64, len(isInt))
+	colTypes := make([]ColumnFlag, len(isInt))
+	colKeys := make([]int64, len(isInt))
+	enc := BinhEncoder{ }
+
+	// Write blocks one by one.
+	for block := 0; block < rd.Blocks(); block++ {
+		// Read from the text file
+		ibuf = rd.ReadIntBlock(icols, block, ibuf)
+		fbuf = rd.ReadFloat64Block(fcols, block, fbuf)
+
+		// Count haloes in the block
+		var nHaloes int64
+		if len(ibuf) > 0 {
+			nHaloes = int64(len(ibuf[0]))
+		} else {
+			nHaloes = int64(len(fbuf[0]))
+		}
+		binary.Write(wr, binary.LittleEndian, nHaloes)
+
+		// Find column types
+		for col := 0; col < len(isInt); col++ {
+			if isInt[col] {
+				colTypes[col], colKeys[col] = intColumnType(ibuf[bufIdx[col]])
+			} else {
+				if isLog[col] {
+					colTypes[col], colKeys[col] = logFloat64ColumnType(
+						fbuf[bufIdx[col]], deltas[col],
+					)
+				} else {
+					colTypes[col], colKeys[col] = float64ColumnType(
+						fbuf[bufIdx[col]], deltas[col],
+					)
+				}
+			}
+		}
+
+		// Write column information
+		binary.Write(wr, binary.LittleEndian, colTypes)
+		binary.Write(wr, binary.LittleEndian, colKeys)
+		
+		// Write columns
+		for col := 0; col < len(isInt); col++ {
+			if isInt[col] {
+				enc.EncodeInts(colTypes[col], ibuf[bufIdx[col]], wr)
+			} else {
+				enc.EncodeFloat64s(
+					colTypes[col], deltas[col], fbuf[bufIdx[col]], wr,
+				)
+			}
+		}
+	}
+}
+
+func newBinhHeader(inName string, blocks int, config BinhConfig) *BinhHeader {
+	hd := &BinhHeader{ }
+
+	panic("NYI")
+
+	return hd
+}
+
+func parseColumnInfo(info []string) (
+	names []string, isInt, isLog []bool, deltas []float64,
+) {
+	names = make([]string, len(info))
+	isInt = make([]bool, len(info))
+	isLog = make([]bool, len(info))
+	deltas = make([]float64, len(info))
+
+	panic("NYI")
+
+	return names, isInt, isLog, deltas
+}
+
+func bufferIndex(isInt []bool) (bufIdx, icols, fcols []int) {
+	bufIdx = make([]int, len(isInt))
+
+	panic("NYI")
+
+	return bufIdx, icols, fcols
+}
+
+func rangeToIntType(min, max int) ColumnFlag {
+	// Need to do this to avoid overflow
+	var (
+		low, scaledRange int64
+	)
+	if min < 0 {
+		// It's possible that max - min > math.MaxInt64
+		scaledRange = int64(max) - (int64(min) - math.MinInt64)
+		low = math.MinInt64
+	} else {
+		scaledRange = int64(max) - int64(min)
+		low = 0
+	}
+
+	switch {
+	case scaledRange < low + (math.MaxInt8 - math.MinInt8 + 1):
+		return Int8
+	case scaledRange < low + (math.MaxInt16 - math.MinInt16 + 1):
+		return Int16
+	case scaledRange < low + (math.MaxInt32 - math.MinInt32 + 1):
+		return Int32
+	default:
+		return Int64
+	}
+}
+
+func intColumnType(x []int) (flag ColumnFlag, key int64) {
+	min, max := x[0], x[0]
+	for i := range x {
+		if x[i] < min { min = x[i] }
+		if x[i] > max { max = x[i] }
+	}
+
+	return rangeToIntType(min, max), int64(min)
+}
+
+func float64ColumnType(x []float64, delta float64) (
+	flag ColumnFlag, key int64,
+) {
+	if delta == 0 { return Float32, 0 }
+
+	min, max := x[0], x[0]
+	for i := range x {
+		if x[i] < min { min = x[i] }
+		if x[i] > max { max = x[i] }
+	}
+
+	qMin, qMax := int(math.Floor(min / delta)), int(math.Floor(max / delta))
+
+	flag = rangeToIntType(qMin, qMax)
+
+	switch flag {
+	case Int64: return Float32, 0 // Don't even bother
+	case Int32: return Float32, 0 // Don't even bother
+	case Int16: return QFloat16, int64(qMin)
+	case Int8: return QFloat8, int64(qMin)
+	}
+	panic("Impossible")
+}
+
+func logFloat64ColumnType(x []float64, delta float64) (
+	flag ColumnFlag, key int64,
+) {
+	if delta == 0 { return Float32, 0 }
+
+	min, max := x[0], x[0]
+	for i := range x {
+		if x[i] <= 0 {
+			return Float32, 0
+		}
+		if x[i] < min { min = x[i] }
+		if x[i] > max { max = x[i] }
+	}
+
+	qMin := int(math.Floor(math.Log10(min) / delta))
+	qMax := int(math.Floor(math.Log10(max) / delta))
+
+	flag = rangeToIntType(qMin, qMax)
+
+	switch flag {
+	case Int64: return Float32, 0 // Don't even bother
+	case Int32: return Float32, 0 // Don't even bother
+	case Int16: return QLogFloat16, int64(qMin)
+	case Int8: return QLogFloat8, int64(qMin)
+	}
+	panic("Impossible")
 }
 
