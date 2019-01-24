@@ -505,7 +505,18 @@ func parseColumnInfo(info []string) (
 func bufferIndex(isInt []bool) (bufIdx, icols, fcols []int) {
 	bufIdx = make([]int, len(isInt))
 
-	panic("NYI")
+	iIdx, fIdx := 0, 0
+	for i := range isInt {
+		if isInt[i] {
+			bufIdx[i] = iIdx
+			icols = append(icols, i)
+			iIdx++
+		} else {
+			bufIdx[i] = fIdx
+			fcols = append(fcols, i)
+			fIdx++
+		}
+	}
 
 	return bufIdx, icols, fcols
 }

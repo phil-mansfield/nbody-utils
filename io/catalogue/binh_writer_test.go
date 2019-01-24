@@ -255,6 +255,39 @@ func TestLogFloat64ColumnType(t *testing.T) {
 }
 
 
+func TestBufferIndex(t *testing.T) {
+	tests := []struct {
+		isInt []bool
+		bufIdx, icols, fcols []int
+	} {
+		{[]bool{true}, []int{0}, []int{0}, []int{}},
+		{[]bool{false}, []int{0}, []int{}, []int{0}},
+		{[]bool{true, true, true}, []int{0, 1, 2}, []int{0, 1, 2}, []int{}},
+		{[]bool{false, false, false}, []int{0, 1, 2}, []int{}, []int{0, 1, 2}},
+		{[]bool{false, false, true, false},
+			[]int{0, 1, 0, 2}, []int{2}, []int{0, 1, 3}},
+		{[]bool{true, true, false, true},
+			[]int{0, 1, 0, 2}, []int{0, 1, 3}, []int{2}},
+	}
+
+	for i := range tests {
+		bufIdx, icols, fcols := bufferIndex(tests[i].isInt)
+
+		if !intsEq(tests[i].bufIdx, bufIdx) {
+			t.Errorf("%d) expected bufIdx = %d, got %d",
+				i, tests[i].bufIdx, bufIdx)
+		}
+		if !intsEq(tests[i].icols, icols) {
+			t.Errorf("%d) expected icols = %d, got %d",
+				i, tests[i].icols, icols)
+		}
+		if !intsEq(tests[i].fcols, fcols) {
+			t.Errorf("%d) expected focls = %d, got %d",
+				i, tests[i].fcols, fcols)
+		}
+	}
+}
+
 func float64sAlmostEq(x, y []float64, delta float64) bool {
 	if len(x) != len(y) { return false }
 	
