@@ -323,7 +323,6 @@ func clipIntBuffers(bufs [][]int, n int) {
 	}
 }
 
-
 func clipFloat64Buffers(bufs [][]float64, n int) {
 	for i := range bufs {
 		bufs[i] = bufs[i][:n]

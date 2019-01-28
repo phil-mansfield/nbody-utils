@@ -6,10 +6,13 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"encoding/binary"
 
 	"github.com/phil-mansfield/nbody-utils/config"
+	ar "github.com/phil-mansfield/nbody-utils/array"
 )
 
 type BinhConfig struct {
@@ -20,17 +23,20 @@ type BinhConfig struct {
 	MassColumn int64
 	ColumnInfo []string
 	SkipColumns []string
+	Sort bool
 }
 
 func ParseBinhConfig(fname string) BinhConfig {
 	c := BinhConfig{}
-	vars := config.NewConfigVars("convert_catalogue")
+	vars := config.NewConfigVars("binh")
 	vars.Float(&c.ParticleMass, "ParticleMass", -1.0)
 	vars.Int(&c.MinParticles, "MinParticles", 200)
 	vars.Int(&c.Columns, "Columns", -1)
 	vars.Int(&c.HeaderLines, "HeaderLines", 0)
 	vars.Int(&c.MassColumn, "MassColumn", -1)
 	vars.Strings(&c.ColumnInfo, "ColumnInfo", []string{})
+	vars.Strings(&c.SkipColumns, "SkipColumns", []string{})
+	vars.Bool(&c.Sort, "Sort", false)
 
 	err := config.ReadConfig(fname, vars)
 	if err != nil { 
@@ -384,15 +390,21 @@ func (enc *BinhEncoder) DecodeFloat32s(
 // Binh stuff //
 ////////////////
 
-const BinhVersion =  2
+const (
+	BinhVersion =  2
+	BinhSeed = 1337
+)
 
 type BinhFixedWidthHeader struct {
 	Version int64 // Version of the binh format being used
+	Seed int64 // Seed to use when de-quantizing floats.
 	Columns int64 // Number of columns in each blocks
 	MassColumn int64 // Column used to order haloes within a blocks
 	Blocks int64 // Number of blocks in the file
 	TextHeaderLength int64 // Number of bytes in the text header
 	TextColumnNamesLength int64 // number of bytes in the 
+	IsSorted int64 // 1 if sorted, 0 otherwise
+	MinMass float64 // Approximate smallest mass stored in the file
 }
 
 type BinhHeader struct {
@@ -401,14 +413,20 @@ type BinhHeader struct {
 	Deltas []float64
 	TextHeader []byte
 	TextColumnNames []byte
-	// Fields sroted in the blocks themselves
+	ColumnSkipped []uint8
+	// Fields stored in the blocks themselves
 	Haloes int64
 	BlockHaloes []int64
 	BlockFlags [][]ColumnFlag
+	BlockKeys [][]int64
+	// Not stored
+	ColumnLookup map[string]int
 }
 
 // TextToBinh converts a text file to a binh file.
-func TextToBinh(inName, outName string, config BinhConfig) {
+func TextToBinh(
+	inName, outName string, config BinhConfig, textConfig ...TextConfig,
+) {
 	// Column information
 	_, isInt, isLog, deltas := parseColumnInfo(config.ColumnInfo)
 	bufIdx, icols, fcols := bufferIndex(isInt)
@@ -416,12 +434,13 @@ func TextToBinh(inName, outName string, config BinhConfig) {
 	// Set up I/O
 	wr, err := os.Create(outName)
 	if err != nil { panic(err.Error()) }
-	rd := TextFile(inName)
+	rd := TextFile(inName, textConfig...)
 
 	// Write a blank header for now. We'll come back to this later.
 	hd := newBinhHeader(inName, rd.Blocks(), config)
 	binary.Write(wr, binary.LittleEndian, hd.BinhFixedWidthHeader)
 	binary.Write(wr, binary.LittleEndian, hd.Deltas)
+	binary.Write(wr, binary.LittleEndian, hd.ColumnSkipped)
 	binary.Write(wr, binary.LittleEndian, hd.TextHeader)
 	binary.Write(wr, binary.LittleEndian, hd.TextColumnNames)
 
@@ -438,27 +457,41 @@ func TextToBinh(inName, outName string, config BinhConfig) {
 		ibuf = rd.ReadIntBlock(icols, block, ibuf)
 		fbuf = rd.ReadFloat64Block(fcols, block, fbuf)
 
-		// Count haloes in the block
-		var nHaloes int64
-		if len(ibuf) > 0 {
-			nHaloes = int64(len(ibuf[0]))
-		} else {
-			nHaloes = int64(len(fbuf[0]))
+		// Set up cuts and sorting.
+		massCol := fbuf[bufIdx[config.MassColumn]]
+		cut := ar.Geq(massCol, hd.MinMass)
+		nHaloes := int64(0)
+		for i := range cut {
+			if cut[i] { nHaloes++ }
 		}
+
+		var order []int
+		if hd.IsSorted == 1 {
+			order = ar.IntReverse(ar.QuickSortIndex(ar.Cut(massCol, cut)))
+		} else {
+			order = make([]int, nHaloes)
+			for i := range order { order[i] = i }
+		}
+
 		binary.Write(wr, binary.LittleEndian, nHaloes)
+
+		runtime.GC()
 
 		// Find column types
 		for col := 0; col < len(isInt); col++ {
+			// TODO: buffer the cuts here
 			if isInt[col] {
-				colTypes[col], colKeys[col] = intColumnType(ibuf[bufIdx[col]])
+				vals := ar.IntOrder(ar.IntCut(ibuf[bufIdx[col]], cut), order)
+				colTypes[col], colKeys[col] = intColumnType(vals)
 			} else {
+				vals := ar.Order(ar.Cut(fbuf[bufIdx[col]], cut), order)
 				if isLog[col] {
 					colTypes[col], colKeys[col] = logFloat64ColumnType(
-						fbuf[bufIdx[col]], deltas[col],
+						vals, deltas[col],
 					)
 				} else {
 					colTypes[col], colKeys[col] = float64ColumnType(
-						fbuf[bufIdx[col]], deltas[col],
+						vals, deltas[col],
 					)
 				}
 			}
@@ -467,14 +500,19 @@ func TextToBinh(inName, outName string, config BinhConfig) {
 		// Write column information
 		binary.Write(wr, binary.LittleEndian, colTypes)
 		binary.Write(wr, binary.LittleEndian, colKeys)
-		
+		 
 		// Write columns
 		for col := 0; col < len(isInt); col++ {
+			// TODO: buffer the cuts here.
+
+			if hd.ColumnSkipped[col] == 1 { continue }
 			if isInt[col] {
-				enc.EncodeInts(colTypes[col], ibuf[bufIdx[col]], wr)
+				vals := ar.IntOrder(ar.IntCut(ibuf[bufIdx[col]], cut), order)
+				enc.EncodeInts(colTypes[col], vals, wr)
 			} else {
+				vals := ar.Order(ar.Cut(fbuf[bufIdx[col]], cut), order)
 				enc.EncodeFloat64s(
-					colTypes[col], deltas[col], fbuf[bufIdx[col]], wr,
+					colTypes[col], deltas[col], vals, wr,
 				)
 			}
 		}
@@ -482,11 +520,80 @@ func TextToBinh(inName, outName string, config BinhConfig) {
 }
 
 func newBinhHeader(inName string, blocks int, config BinhConfig) *BinhHeader {
-	hd := &BinhHeader{ }
 
-	panic("NYI")
+	names, _, _, deltas := parseColumnInfo(config.ColumnInfo)
 
+	if len(names) != int(config.Columns) {
+		panic(fmt.Sprintf("len(ColunmInfo) = %d, but Columns = %d", len(names), config.Columns))
+	}
+
+	hd := &BinhHeader{
+		Deltas: deltas,
+		TextColumnNames: []byte(strings.Join(names, ",")),
+		TextHeader: readTextHeader(inName, int(config.HeaderLines)),
+		ColumnSkipped: make([]uint8, len(names)),
+		ColumnLookup: map[string]int{},
+	}
+
+	for i := range names {
+		hd.ColumnLookup[names[i]] = i
+	}
+
+	for i := range config.SkipColumns {
+		name := strings.ToLower(strings.Trim(config.SkipColumns[i], " "))
+		hd.ColumnSkipped[hd.ColumnLookup[name]] = 1
+	}
+
+	isSorted := int64(0)
+	if config.Sort { isSorted = 1 }
+	
+	hd.BinhFixedWidthHeader = BinhFixedWidthHeader{
+		Version: BinhVersion,
+		Seed: BinhSeed,
+		Columns: int64(len(config.ColumnInfo)),
+		MassColumn: config.MassColumn,
+		Blocks: int64(blocks),
+		TextHeaderLength: int64(len(hd.TextHeader)),
+		TextColumnNamesLength: int64(len(hd.TextColumnNames)),
+		MinMass: float64(config.MinParticles)*config.ParticleMass,
+		IsSorted: isSorted,
+	}
+	
 	return hd
+}
+
+func readTextHeader(haloFile string, headerLines int) []byte {
+	f, err := os.Open(haloFile)
+	defer f.Close()
+	if err != nil { panic(err.Error()) }	
+	return readNTokens(f, byte('\n'), headerLines)
+}
+
+
+func readNTokens(rd io.Reader, tok byte, n int) []byte {
+	buf := make([]byte, 1<<10)
+	out, slice := []byte{}, []byte{}
+	
+	for n > 0 {
+		nRead, err := io.ReadFull(rd, buf)
+		if err == io.EOF { break }
+		slice, n = sliceNTokens(buf[:nRead], tok, n)
+
+		out = append(out, slice...)
+	}
+
+	return out
+}
+
+func sliceNTokens(b []byte, tok byte, n int) (s []byte, nLeft int) {
+	for i := range b {
+		if b[i] == tok {
+			n--
+			if n == 0 { return b[:i+1], 0 }
+		}
+	}
+
+	return b, n
 }
 
 func parseColumnInfo(info []string) (
@@ -497,7 +604,33 @@ func parseColumnInfo(info []string) (
 	isLog = make([]bool, len(info))
 	deltas = make([]float64, len(info))
 
-	panic("NYI")
+	for i, column := range info {
+		tokens := strings.Split(column, ":")
+		switch len(tokens) {
+		case 0, 1:
+			panic(fmt.Sprintf("column '%s' not given a type.", column))
+		case 3:
+			var err error
+			deltas[i], err = strconv.ParseFloat(strings.Trim(tokens[2]," "), 64)
+			if err != nil {
+				panic(fmt.Sprintf("column '%s': %s", column, err.Error()))
+			}
+			fallthrough
+		case 2:
+			names[i] = strings.ToLower(strings.Trim(tokens[0], " "))
+			switch strings.ToLower(strings.Trim(tokens[1], " ")) {
+			case "int": isInt[i] = true
+			case "float":
+			case "log": isLog[i] = true
+			default:
+				panic(fmt.Sprintf(
+					"Unrecognized type '%s' in column '%s'.", tokens[1],
+				))
+			}
+		default:
+			panic(fmt.Sprintf("column '%s' has too many annotations", column))
+		}		
+	}
 
 	return names, isInt, isLog, deltas
 }
