@@ -475,7 +475,7 @@ func TestNewBinhReader(t *testing.T) {
 	}
 }
 
-func TestBinhReadInts(t *testing.T) {
+func TestBinhReadFloat64s(t *testing.T) {
 	textConfig := DefaultConfig
 	textConfig.MaxBlockSize = 100
 	textConfig.MaxLineSize = 20
@@ -490,18 +490,31 @@ func TestBinhReadInts(t *testing.T) {
 
 	rd := newBinhReader("test_files/binh_test.binh")
 
-	block0 := rd.ReadIntBlock([]string{"ID"}, 0)[0]
-	block1 := rd.ReadIntBlock([]string{"ID"}, 1)[0]
-	all := rd.ReadInts([]string{"ID"})[0]
+	block0 := rd.ReadFloat64Block([]string{"mvir", "x"}, 0)
+	block1 := rd.ReadFloat64Block([]string{"x", "mvir"}, 1)
+	all := rd.ReadFloat64s([]string{"mvir", "x"})
 
-	if !intsEq([]int{2}, block0) {
-		t.Errorf("Expected block 0 = %d, got %d.", []int{2}, block0)
+	mvir0, x0 := block0[0], block0[1]
+	x1, mvir1 := block1[0], block1[1]
+	mvir, x := all[0], all[1]
+
+	if !float64sAlmostEq(x, []float64{150, 100, 130, 125}, 1) {
+		t.Errorf("Got %g, expected %d", x, []float64{150, 100, 130, 125})
 	}
-	if !intsEq([]int{5, 4, 3}, block1) {
-		t.Errorf("Expected block 0 = %d, got %d.", []int{5, 4, 3}, block1)
+	if !float64sAlmostEq(x0, []float64{150}, 1) {
+		t.Errorf("Got %g, expected %d", x0, []float64{150})
 	}
-	if !intsEq([]int{2, 5, 4, 3}, all) {
-		t.Errorf("Expected all = %d, got %d.", []int{2, 5, 4, 3}, all)
+	if !float64sAlmostEq(x1, []float64{100, 130, 125}, 1) {
+		t.Errorf("Got %g, expected %d", x1, []float64{100, 130, 125})
+	}
+	if !logFloat64sAlmostEq(mvir, []float64{1e12, 1e13, 1e11, 1e10}, 0.01) {
+		t.Errorf("Got %g, expected %d", mvir, []float64{1e12, 1e13, 1e11, 1e10})
+	}
+	if !logFloat64sAlmostEq(mvir0, []float64{1e12}, 0.01) {
+		t.Errorf("Got %g, expected %d", mvir0, []float64{1e12})
+	}
+	if !logFloat64sAlmostEq(mvir1, []float64{1e13, 1e11, 1e10}, 0.01) {
+		t.Errorf("Got %g, expected %d", mvir1, []float64{1e13, 1e11, 1e10})
 	}
 }
 
@@ -539,6 +552,20 @@ func float64sAlmostEq(x, y []float64, delta float64) bool {
 
 	return true
 }
+
+func logFloat64sAlmostEq(x, y []float64, delta float64) bool {
+	if len(x) != len(y) { return false }
+	
+	for i := range x {
+		if math.Log10(x[i]) - math.Log10(y[i]) > delta ||
+			math.Log10(y[i]) - math.Log10(x[i]) > delta {
+			return false
+		}
+	}
+
+	return true
+}
+
 
 func float32sAlmostEq(x, y []float32, delta float32) bool {
 	if len(x) != len(y) { return false }

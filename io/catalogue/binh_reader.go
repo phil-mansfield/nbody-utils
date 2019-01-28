@@ -124,14 +124,40 @@ func (rd *binhReader) ReadInts(
 }
 
 func (rd *binhReader) ReadFloat64s(
-	columns interface{}, bufs ...[][]float64,
+	columns interface{}, optBuf ...[][]float64,
 ) [][]float64 {
-	panic("NYI")
+	cols := rd.columnIndices(columns)
+	bufs := cleanFloat64Buffer(optBuf, len(cols), int(rd.hd.Haloes))
+
+	start, end := 0, 0
+	for block := 0; block < int(rd.hd.Blocks); block++ {
+		start = end
+		end += int(rd.hd.BlockHaloes[block])
+		for i := range cols {
+			col := cols[i]
+			rd.readFloat64Column(block, col, bufs[i][start:end])
+		}
+	}
+
+	return bufs
 }
 func (rd *binhReader) ReadFloat32s(
-	columns interface{}, bufs ...[][]float32,
+	columns interface{}, optBuf ...[][]float32,
 ) [][]float32 {
-	panic("NYI")
+	cols := rd.columnIndices(columns)
+	bufs := cleanFloat32Buffer(optBuf, len(cols), int(rd.hd.Haloes))
+
+	start, end := 0, 0
+	for block := 0; block < int(rd.hd.Blocks); block++ {
+		start = end
+		end += int(rd.hd.BlockHaloes[block])
+		for i := range cols {
+			col := cols[i]
+			rd.readFloat32Column(block, col, bufs[i][start:end])
+		}
+	}
+
+	return bufs
 }
 	
 func (rd *binhReader) Blocks() int {
@@ -151,15 +177,27 @@ func (rd *binhReader) ReadIntBlock(
 }
 
 func (rd *binhReader)  ReadFloat64Block(
-	columns interface{}, i int,bufs ...[][]float64,
+	columns interface{}, block int, optBuf ...[][]float64,
 ) [][]float64 {
-	panic("NYI")
+	cols := rd.columnIndices(columns)
+	bufs := cleanFloat64Buffer(optBuf, len(cols), int(rd.hd.BlockHaloes[block]))
+	for i := range cols {
+		rd.readFloat64Column(block, cols[i], bufs[i])
+	}
+
+	return bufs
 }
 
 func (rd *binhReader) ReadFloat32Block(
-	columns interface{}, i int,bufs ...[][]float32,
+	columns interface{}, block int, optBuf ...[][]float32,
 ) [][]float32 {
-	panic("NYI")
+	cols := rd.columnIndices(columns)
+	bufs := cleanFloat32Buffer(optBuf, len(cols), int(rd.hd.BlockHaloes[block]))
+	for i := range cols {
+		rd.readFloat32Column(block, cols[i], bufs[i])
+	}
+
+	return bufs
 }
 
 func (rd *binhReader) columnIndices(columns interface{}) []int {
@@ -218,9 +256,69 @@ func cleanIntBuffer(bufArg [][][]int, cols, n int) [][]int {
 	return bufs
 }
 
+func cleanFloat64Buffer(bufArg [][][]float64, cols, n int) [][]float64 {
+	var bufs [][]float64
+	if len(bufArg) == 0 {
+		bufs = make([][]float64, cols)
+	} else {
+		bufs = bufArg[0]
+	}
+
+	for i := range bufs {
+		bufs[i] = bufs[i][:cap(bufs[i])]
+		needed := n - len(bufs[i])
+		if needed > 0 {
+			bufs[i] = append(bufs[i], make([]float64, needed)...)
+		} else {
+			bufs[i] = bufs[i][:n]
+		}
+	}
+
+	return bufs
+}
+
+
+func cleanFloat32Buffer(bufArg [][][]float32, cols, n int) [][]float32 {
+	var bufs [][]float32
+	if len(bufArg) == 0 {
+		bufs = make([][]float32, cols)
+	} else {
+		bufs = bufArg[0]
+	}
+
+	for i := range bufs {
+		bufs[i] = bufs[i][:cap(bufs[i])]
+		needed := n - len(bufs[i])
+		if needed > 0 {
+			bufs[i] = append(bufs[i], make([]float32, needed)...)
+		} else {
+			bufs[i] = bufs[i][:n]
+		}
+	}
+
+	return bufs
+}
+
+
 func (rd *binhReader) readIntColumn(block, col int, out []int) {
 	start := rd.columnByteIndex(block, col)
 	flag, key := rd.hd.BlockFlags[block][col], rd.hd.BlockKeys[block][col]
 	rd.rd.Seek(int64(start), 0)
 	rd.enc.DecodeInts(flag, key, rd.rd, out)
+}
+
+func (rd *binhReader) readFloat64Column(block, col int, out []float64) {
+	start := rd.columnByteIndex(block, col)
+	flag, key := rd.hd.BlockFlags[block][col], rd.hd.BlockKeys[block][col]
+	delta := rd.hd.Deltas[col]
+	rd.rd.Seek(int64(start), 0)
+	rd.enc.DecodeFloat64s(flag, delta, key, rd.rd, out)
+}
+
+func (rd *binhReader) readFloat32Column(block, col int, out []float32) {
+	start := rd.columnByteIndex(block, col)
+	flag, key := rd.hd.BlockFlags[block][col], rd.hd.BlockKeys[block][col]
+	delta := float32(rd.hd.Deltas[col])
+	rd.rd.Seek(int64(start), 0)
+	rd.enc.DecodeFloat32s(flag, delta, key, rd.rd, out)
 }
