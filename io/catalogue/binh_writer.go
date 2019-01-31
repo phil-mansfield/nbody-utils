@@ -78,8 +78,7 @@ const (
 	QLogFloat64
 	QLogFloat32
 	QLogFloat16
-	QLogFloat8
-	
+	QLogFloat8	
 )
 
 func (flag ColumnFlag) Size() int {
@@ -196,6 +195,7 @@ func (enc *BinhEncoder) EncodeInts(
 		binary.Write(wr, binary.LittleEndian, buf)
 	case Int8:
 		buf := enc.int8Buffer(len(x))
+		fmt.Printf("buf = %d, min = %d\n", buf, min)
 		for i := range buf { buf[i] = int8(x[i] - min + math.MinInt8) }
 		binary.Write(wr, binary.LittleEndian, buf)
 	default:
