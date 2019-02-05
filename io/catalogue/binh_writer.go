@@ -3,6 +3,7 @@ package catalogue
 import (
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"math/rand"
 	"os"
@@ -195,7 +196,6 @@ func (enc *BinhEncoder) EncodeInts(
 		binary.Write(wr, binary.LittleEndian, buf)
 	case Int8:
 		buf := enc.int8Buffer(len(x))
-		fmt.Printf("buf = %d, min = %d\n", buf, min)
 		for i := range buf { buf[i] = int8(x[i] - min + math.MinInt8) }
 		binary.Write(wr, binary.LittleEndian, buf)
 	default:
@@ -434,7 +434,9 @@ func TextToBinh(
 	// Set up I/O
 	wr, err := os.Create(outName)
 	if err != nil { panic(err.Error()) }
+	checkMem("opening text file")
 	rd := TextFile(inName, textConfig...)
+	checkMem("created text file reader")
 
 	// Write a blank header for now. We'll come back to this later.
 	hd := newBinhHeader(inName, rd.Blocks(), config)
@@ -445,17 +447,22 @@ func TextToBinh(
 	binary.Write(wr, binary.LittleEndian, hd.TextColumnNames)
 
 	// Set up buffers
-	ibuf := make([][]int, len(isInt))
-	fbuf := make([][]float64, len(isInt))
+	ibuf := make([][]int, len(icols))
+	fbuf := make([][]float64, len(fcols))
 	colTypes := make([]ColumnFlag, len(isInt))
 	colKeys := make([]int64, len(isInt))
 	enc := BinhEncoder{ }
 
+	checkMem("finished initialization")
+
 	// Write blocks one by one.
 	for block := 0; block < rd.Blocks(); block++ {
 		// Read from the text file
+		checkMem(fmt.Sprintf("Starting block %d", block))
 		ibuf = rd.ReadIntBlock(icols, block, ibuf)
+		checkMem(fmt.Sprintf("Reading int block %d", block))
 		fbuf = rd.ReadFloat64Block(fcols, block, fbuf)
+		checkMem(fmt.Sprintf("Reading float block %d", block))
 
 		// Set up cuts and sorting.
 		massCol := fbuf[bufIdx[config.MassColumn]]
@@ -472,6 +479,8 @@ func TextToBinh(
 			order = make([]int, nHaloes)
 			for i := range order { order[i] = i }
 		}
+		
+		checkMem("First cuts and sorting")
 
 		binary.Write(wr, binary.LittleEndian, nHaloes)
 
@@ -480,6 +489,8 @@ func TextToBinh(
 		// Find column types
 		for col := 0; col < len(isInt); col++ {
 			// TODO: buffer the cuts here
+			runtime.GC()
+
 			if isInt[col] {
 				vals := ar.IntOrder(ar.IntCut(ibuf[bufIdx[col]], cut), order)
 				colTypes[col], colKeys[col] = intColumnType(vals)
@@ -506,6 +517,8 @@ func TextToBinh(
 			// TODO: buffer the cuts here.
 
 			if hd.ColumnSkipped[col] == 1 { continue }
+			runtime.GC()
+
 			if isInt[col] {
 				vals := ar.IntOrder(ar.IntCut(ibuf[bufIdx[col]], cut), order)
 				enc.EncodeInts(colTypes[col], vals, wr)
@@ -624,7 +637,7 @@ func parseColumnInfo(info []string) (
 			case "log": isLog[i] = true
 			default:
 				panic(fmt.Sprintf(
-					"Unrecognized type '%s' in column '%s'.", tokens[1],
+					"Unrecognized type '%s' in column '%s'.", tokens[1], column,
 				))
 			}
 		default:
@@ -742,3 +755,14 @@ func logFloat64ColumnType(x []float64, delta float64) (
 	panic("Impossible")
 }
 
+func checkMem(s string) {
+	log.Println(s)
+	ms := runtime.MemStats{ }
+	runtime.ReadMemStats(&ms)
+	fmt.Printf("Alloc: %5d MB Sys: %5d MB TotalAlloc: %5d MB\n",
+		ms.Alloc >> 20, ms.Sys >> 20, ms.TotalAlloc >> 20)
+	runtime.GC()
+	runtime.ReadMemStats(&ms)
+	fmt.Printf("Alloc: %5d MB Sys: %5d MB TotalAlloc: %5d MB\n",
+		ms.Alloc >> 20, ms.Sys >> 20, ms.TotalAlloc >> 20)
+}
