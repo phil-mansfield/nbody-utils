@@ -19,6 +19,8 @@ type BinhConfig struct {
 }`
 
 func main() {
+	fmt.Println("Running on", os.Args)
+
 	if len(os.Args) != 4 {
 		fmt.Printf(ErrorMessage);	
 		os.Exit(1)
@@ -31,8 +33,5 @@ func main() {
 
 	catalogue.TextToBinh(haloFile, outFile, binhConfig, textConfig)
 
-	binh := catalogue.BinH(outFile)
-	mpeak := binh.ReadFloat64s([]string{"Mpeak"})[0]
-	fmt.Printf("haloes: %d\n", len(mpeak))
-	fmt.Printf("haloes: %.4g %.4g\n", mpeak[:5], mpeak[len(mpeak) - 5:])
+	fmt.Println("Done converting!")
 }

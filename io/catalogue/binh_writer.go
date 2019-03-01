@@ -458,11 +458,11 @@ func TextToBinh(
 	// Write blocks one by one.
 	for block := 0; block < rd.Blocks(); block++ {
 		// Read from the text file
-		checkMem(fmt.Sprintf("Starting block %d", block))
+		checkMem(fmt.Sprintf("Starting block %d/%d", block+1, rd.Blocks()))
 		ibuf = rd.ReadIntBlock(icols, block, ibuf)
-		checkMem(fmt.Sprintf("Reading int block %d", block))
+		checkMem(fmt.Sprintf("Reading int block %d/%d", block+1, rd.Blocks()))
 		fbuf = rd.ReadFloat64Block(fcols, block, fbuf)
-		checkMem(fmt.Sprintf("Reading float block %d", block))
+		checkMem(fmt.Sprintf("Reading float block %d/%d", block+1, rd.Blocks()))
 
 		// Set up cuts and sorting.
 		massCol := fbuf[bufIdx[config.MassColumn]]
@@ -479,11 +479,9 @@ func TextToBinh(
 			order = make([]int, nHaloes)
 			for i := range order { order[i] = i }
 		}
-		
-		checkMem("First cuts and sorting")
 
 		binary.Write(wr, binary.LittleEndian, nHaloes)
-
+			
 		runtime.GC()
 
 		// Find column types

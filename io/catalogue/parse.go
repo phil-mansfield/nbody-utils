@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"bytes"
+	"runtime"
 )
 
 // split splits a byte splice at each separating flag. Faster than
@@ -136,6 +137,8 @@ func parseFloat64s(
 
 	var err error
 	for i, line := range lines {
+
+		if i % 1000000 == 0 { runtime.GC() }
 
 		// Break line up into fields/words
 
