@@ -48,6 +48,13 @@ func newBinhReader(fname string) *binhReader {
 	return rd
 }
 
+func ReadBinhHeader(fname string) *BinhHeader {
+	rd, err := os.Open(fname)
+	defer rd.Close()
+	if err != nil { panic(err.Error()) }
+	return readBinhHeader(rd)
+}
+
 func readBinhHeader(rd io.ReadSeeker) *BinhHeader {
 	hd := &BinhHeader{ }
 	
