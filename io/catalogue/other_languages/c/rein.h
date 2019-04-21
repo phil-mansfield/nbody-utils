@@ -55,7 +55,7 @@ void rein_binh_read_column_block(
     rein_type t, void *buffer
 );
 void rein_binh_read_column(
-    rein_binh *file, int block,
+    rein_binh *file, int column,
     rein_type t, void *buffer
 );
 
