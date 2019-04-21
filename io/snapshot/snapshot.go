@@ -1,7 +1,13 @@
 package snapshot
 
 import (
+	"encoding/binary"
+	"io"
+	"reflect"
+
 	"github.com/phil-mansfield/nbody-utils/cosmo"
+
+	"unsafe"
 )
 
 type Snapshot interface {
@@ -33,4 +39,129 @@ func (hd *Header) calcUniformMass() {
 	rhoM0 := cosmo.RhoAverage(hd.H100*100, hd.OmegaM, hd.OmegaL, 0)
 	mTot := (hd.L * hd.L * hd.L) * rhoM0
 	hd.UniformMp =  mTot / float64(hd.NTotal)
+}
+
+func readVecAsByte(rd io.Reader, end binary.ByteOrder, buf [][3]float32) error {
+	bufLen := len(buf)
+
+	hd := *(*reflect.SliceHeader)(unsafe.Pointer(&buf))
+	hd.Len *= 12
+	hd.Cap *= 12
+
+	byteBuf := *(*[]byte)(unsafe.Pointer(&hd))
+	_, err := rd.Read(byteBuf)
+	if err != nil {
+		return err
+	}
+
+	if !IsSysOrder(end) {
+		for i := 0; i < bufLen*3; i++ {
+			for j := 0; j < 2; j++ {
+				idx1, idx2 := i*4+j, i*4+3-j
+				byteBuf[idx1], byteBuf[idx2] = byteBuf[idx2], byteBuf[idx1]
+			}
+		}
+	}
+
+	hd.Len /= 12
+	hd.Cap /= 12
+
+	return nil
+}
+
+func readInt64AsByte(rd io.Reader, end binary.ByteOrder, buf []int64) error {
+	bufLen := len(buf)
+
+	hd := *(*reflect.SliceHeader)(unsafe.Pointer(&buf))
+	hd.Len *= 8
+	hd.Cap *= 8
+
+	byteBuf := *(*[]byte)(unsafe.Pointer(&hd))
+	_, err := rd.Read(byteBuf)
+	if err != nil {
+		return err
+	}
+
+	if !IsSysOrder(end) {
+		for i := 0; i < bufLen; i++ {
+			for j := 0; j < 4; j++ {
+				idx1, idx2 := i*8+j, i*8+7-j
+				byteBuf[idx1], byteBuf[idx2] = byteBuf[idx2], byteBuf[idx1]
+			}
+		}
+	}
+
+	hd.Len /= 8
+	hd.Cap /= 8
+
+	return nil
+}
+
+func readInt32AsByte(rd io.Reader, end binary.ByteOrder, buf []int32) error {
+	bufLen := len(buf)
+
+	hd := *(*reflect.SliceHeader)(unsafe.Pointer(&buf))
+	hd.Len *= 4
+	hd.Cap *= 4
+
+	byteBuf := *(*[]byte)(unsafe.Pointer(&hd))
+	_, err := rd.Read(byteBuf)
+	if err != nil {
+		return err
+	}
+
+	if !IsSysOrder(end) {
+		for i := 0; i < bufLen; i++ {
+			for j := 0; j < 2; j++ {
+				idx1, idx2 := i*4+j, i*4+3-j
+				byteBuf[idx1], byteBuf[idx2] = byteBuf[idx2], byteBuf[idx1]
+			}
+		}
+	}
+
+	hd.Len /= 4
+	hd.Cap /= 4
+
+	return nil
+}
+
+func readFloat32AsByte(rd io.Reader, end binary.ByteOrder, buf []float32) error {
+	bufLen := len(buf)
+	hd := *(*reflect.SliceHeader)(unsafe.Pointer(&buf))
+	hd.Len *= 4
+	hd.Cap *= 4
+
+	byteBuf := *(*[]byte)(unsafe.Pointer(&hd))
+	_, err := rd.Read(byteBuf)
+	if err != nil {
+		return err
+	}
+
+	if !IsSysOrder(end) {
+		for i := 0; i < bufLen; i++ {
+			for j := 0; j < 2; j++ {
+				idx1, idx2 := i*4+j, i*4+3-j
+				byteBuf[idx1], byteBuf[idx2] = byteBuf[idx2], byteBuf[idx1]
+			}
+		}
+	}
+
+	hd.Len /= 4
+	hd.Cap /= 4
+
+	return nil
+}
+
+func IsSysOrder(end binary.ByteOrder) bool {
+	buf32 := []int32{1}
+
+	hd := *(*reflect.SliceHeader)(unsafe.Pointer(&buf32))
+	hd.Len *= 4
+	hd.Cap *= 4
+
+	buf8 := *(*[]int8)(unsafe.Pointer(&hd))
+	if buf8[0] == 1 {
+		return binary.LittleEndian == end
+	}
+	return binary.BigEndian == end
 }
