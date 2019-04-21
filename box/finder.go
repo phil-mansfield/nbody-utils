@@ -41,7 +41,7 @@ func NewFinder(L float64, x [][3]float64) *Finder {
 
 
 // FindSubhalos links grid halos (from group A) to a target halo (from group B).
-// Returned arrays are internal buffers, so please treat them kindly.
+// Returned array is an internal buffer, so please treat it kindly.
 func (sf *Finder) Find(pos [3]float64, r0 float64) []int {
 	sf.bufi = 0
 	sf.idxBuf = sf.idxBuf[:cap(sf.idxBuf)]
