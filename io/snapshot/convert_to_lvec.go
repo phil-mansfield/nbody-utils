@@ -142,3 +142,47 @@ func (vg *VectorGrid) Quantize(c, pix int, lim [2]float64, out [3][]int64) {
 		}
 	}
 }
+
+// Bound returns the periodic bounds on the data contained in the array x with
+// a total width of pix.
+func Bound(pix int64, x []int64) (origin, width int64) {
+	x0, width := x[0], int64(1)
+	for _, xi := range x {
+		x1 := x0 + width - 1
+		if x1 >= pix { x1 -= pix }
+
+		d0 := periodicDistance(xi, x0, pix)
+		d1 := periodicDistance(xi, x1, pix)
+
+		if d0 > 0 && d1 < 0 { continue }
+
+		if d1 > -d0 {
+			width += d1
+		} else {
+			x0 += d0
+			if x0 < 0 { x0 += pix }
+			width -= d0
+		}
+
+		if width > pix/2 { return 0, pix }
+	}
+
+	return x0, width
+}
+
+func periodicDistance(x, x0, pix int64) int64 {
+	d := x - x0
+	if d >= 0 {
+		if d > pix - d { return d - pix }
+	} else {
+		if d < -(d + pix) { return pix + d }
+	}
+	return d
+}
+
+func Clip(pix, origin int64, x []int64) {
+	for i := range x {
+		x[i] -= origin
+		if x[i] < 0 { x[i] += pix }
+	}
+}
