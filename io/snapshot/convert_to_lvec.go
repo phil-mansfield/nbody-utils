@@ -66,12 +66,6 @@ func NewVectorGrid(cells, nSideTot int) *VectorGrid {
 	return vg
 }
 
-// Insert inserts a vector into a VectorGrid.
-func (vg *VectorGrid) Insert(id int64, v [3]float32) {
-	c, i := vg.Index(id)
-	vg.Cells[c][i] = v
-}
-
 // XGrid creates a VectorGrid of the position vectors in a snapshot.
 func XGrid(snap Snapshot, cells int) (*VectorGrid, error) {
 	hd := snap.Header()
@@ -88,4 +82,63 @@ func XGrid(snap Snapshot, cells int) (*VectorGrid, error) {
 	}
 
 	return grid, nil
+}
+
+// VGrid creates a VectorGrid of the velocity vectors in a snapshot.
+func VGrid(snap Snapshot, cells int) (*VectorGrid, error) {
+	hd := snap.Header()
+	files := snap.Files()
+
+	grid := NewVectorGrid(cells, int(hd.NSide))
+
+	for i := 0; i < files; i++ {
+		x, err := snap.ReadX(i)
+		if err != nil { return nil, err }
+		id, err := snap.ReadID(i)
+		if err != nil { return nil, err }
+		for j := range x { grid.Insert(id[j], x[j]) }
+	}
+
+	return grid, nil
+}
+
+// Insert inserts a vector into a VectorGrid.
+func (vg *VectorGrid) Insert(id int64, v [3]float32) {
+	c, i := vg.Index(id)
+	vg.Cells[c][i] = v
+}
+
+func (vg *VectorGrid) IntBuffer() [3][]int64 {
+	out := [3][]int64{}
+	for i := 0; i < 3; i++ {
+		out[i] = make([]int64, vg.NSide*vg.NSide*vg.NSide)
+	}
+
+	return out
+}
+
+// Quantize quantizes the cell, c, of a VectorGrid. The grid has a range given
+// by and after quantization there should be pix "pixels" of resolutoin on
+// one side. Each int64 slice in out must be of length vg.NSide^3.
+func (vg *VectorGrid) Quantize(c, pix int, lim [2]float64, out [3][]int64) {
+	for i := 0; i < 3; i++ {
+		if len(out[i]) != int(vg.NSide*vg.NSide*vg.NSide) {
+			panic(fmt.Sprintf("len(out[%d]) = %d, but vg.NSide = %d.",
+				i, len(out[i]), vg.NSide))
+		}
+	}
+
+	L := lim[1] - lim[0]
+	dx := float32(L / float64(pix))
+	low, pix64 := float32(lim[0]), int64(pix)
+
+	for i, v := range vg.Cells[c] {
+		for j := 0; j < 3; j++ {
+			out[j][i] = int64((v[j] - low) / dx)
+			// The next two lines should never be true unless there's some
+			// floating point fuzziness.
+			if out[j][i] < 0 { out[j][i] = 0 }
+			if out[j][i] >= pix64 { out[j][i] = pix64 - 1 }
+		}
+	}
 }
