@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"fmt"
+	"runtime"
 )
 
 // Grid manages the geometry of a cube which has been split up into cubic
@@ -74,11 +75,13 @@ func XGrid(snap Snapshot, cells int) (*VectorGrid, error) {
 	grid := NewVectorGrid(cells, int(hd.NSide))
 
 	for i := 0; i < files; i++ {
+		runtime.GC()
+
 		x, err := snap.ReadX(i)
 		if err != nil { return nil, err }
 		id, err := snap.ReadID(i)
 		if err != nil { return nil, err }
-		for j := range x { grid.Insert(id[j], x[j]) }
+		for j := range x { grid.Insert(id[j] - 1, x[j]) }
 	}
 
 	return grid, nil
@@ -92,11 +95,13 @@ func VGrid(snap Snapshot, cells int) (*VectorGrid, error) {
 	grid := NewVectorGrid(cells, int(hd.NSide))
 
 	for i := 0; i < files; i++ {
-		x, err := snap.ReadX(i)
+		runtime.GC()
+
+		v, err := snap.ReadV(i)
 		if err != nil { return nil, err }
 		id, err := snap.ReadID(i)
 		if err != nil { return nil, err }
-		for j := range x { grid.Insert(id[j], x[j]) }
+		for j := range v { grid.Insert(id[j] - 1, v[j]) }
 	}
 
 	return grid, nil
@@ -120,7 +125,9 @@ func (vg *VectorGrid) IntBuffer() [3][]int64 {
 // Quantize quantizes the cell, c, of a VectorGrid. The grid has a range given
 // by and after quantization there should be pix "pixels" of resolutoin on
 // one side. Each int64 slice in out must be of length vg.NSide^3.
-func (vg *VectorGrid) Quantize(c, pix int, lim [2]float64, out [3][]int64) {
+func (vg *VectorGrid) Quantize(
+	c int, pix int64, lim [2]float64, out [3][]int64,
+) {
 	for i := 0; i < 3; i++ {
 		if len(out[i]) != int(vg.NSide*vg.NSide*vg.NSide) {
 			panic(fmt.Sprintf("len(out[%d]) = %d, but vg.NSide = %d.",
@@ -130,7 +137,7 @@ func (vg *VectorGrid) Quantize(c, pix int, lim [2]float64, out [3][]int64) {
 
 	L := lim[1] - lim[0]
 	dx := float32(L / float64(pix))
-	low, pix64 := float32(lim[0]), int64(pix)
+	low := float32(lim[0])
 
 	for i, v := range vg.Cells[c] {
 		for j := 0; j < 3; j++ {
@@ -138,14 +145,24 @@ func (vg *VectorGrid) Quantize(c, pix int, lim [2]float64, out [3][]int64) {
 			// The next two lines should never be true unless there's some
 			// floating point fuzziness.
 			if out[j][i] < 0 { out[j][i] = 0 }
-			if out[j][i] >= pix64 { out[j][i] = pix64 - 1 }
+			if out[j][i] >= pix { out[j][i] = pix - 1 }
 		}
 	}
 }
 
-// Bound returns the periodic bounds on the data contained in the array x with
-// a total width of pix.
-func Bound(pix int64, x []int64) (origin, width int64) {
+func Bound(x []int64) (origin, width int64) {
+	min, max := x[0], x[0]
+	for i := range x {
+		if x[i] < min { min = x[i] }
+		if x[i] > max { max = x[i] }
+	}
+
+	return min, max - min
+}
+
+// PeriodicBound returns the periodic bounds on the data contained in the array
+// x with a total width of pix.
+func PeriodicBound(pix int64, x []int64) (origin, width int64) {
 	x0, width := x[0], int64(1)
 	for _, xi := range x {
 		x1 := x0 + width - 1
