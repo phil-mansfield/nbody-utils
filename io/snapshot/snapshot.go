@@ -14,6 +14,7 @@ type Snapshot interface {
 	Files() int // Number of files in the snapshot
 	Header() *Header // Header contains basic information about the snapshot
 	Index() *Index // Index to help with searching and snapshot intersection
+	UniformMass() bool // True if all particles are the same mass.
 
 	// All these methods return internal buffers, so don't append to them or
 	// expect them to stick around after the function is called again.

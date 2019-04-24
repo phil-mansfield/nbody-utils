@@ -199,6 +199,8 @@ func (snap *lGadget2Snapshot) ReadX(idx int) ([][3]float32, error) {
 	return snap.xBuf, nil
 }
 
+func (snap *lGadget2Snapshot) UniformMass() bool { return true }
+
 func (snap *lGadget2Snapshot) ReadV(idx int) ([][3]float32, error) {
 	f, err := os.Open(snap.filenames[idx])
 	if err != nil { return nil, err }
