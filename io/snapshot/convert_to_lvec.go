@@ -1,10 +1,14 @@
 package snapshot
 
 import (
-	"encoding/binary"
+	//"encoding/binary"
 	"fmt"
 	"os"
+	"path"
+	"math"
 	"runtime"
+
+	"github.com/phil-mansfield/nbody-utils/container"
 )
 
 // Grid manages the geometry of a cube which has been split up into cubic
@@ -46,6 +50,22 @@ func (g *Grid) Index(id int64) (c, i int64) {
 type VectorGrid struct {
 	Grid
 	Cells [][][3]float32
+}
+
+// Limits returns the minimum and maximum values taken on by any component of
+// any vector in the grid.
+func (g *VectorGrid) Limits() [2]float64 {
+	min, max := g.Cells[0][0][0], g.Cells[0][0][0]
+	for _, cell := range g.Cells {
+		for _, v := range cell {
+			for _, x := range v {
+				if x < min { min = x }
+				if x > max { max = x }
+			}
+		}
+	}
+
+	return [2]float64{ float64(min), float64(max) }
 }
 
 // NewVectorGrid creates a new VectorGrid made with the specified total side
@@ -116,9 +136,9 @@ func (vg *VectorGrid) Insert(id int64, v [3]float32) {
 }
 
 func (vg *VectorGrid) IntBuffer() [3][]uint64 {
-	out := [3][]int64{}
+	out := [3][]uint64{}
 	for i := 0; i < 3; i++ {
-		out[i] = make([]int64, vg.NSide*vg.NSide*vg.NSide)
+		out[i] = make([]uint64, vg.NSide*vg.NSide*vg.NSide)
 	}
 
 	return out
@@ -128,7 +148,7 @@ func (vg *VectorGrid) IntBuffer() [3][]uint64 {
 // by and after quantization there should be pix "pixels" of resolutoin on
 // one side. Each int64 slice in out must be of length vg.NSide^3.
 func (vg *VectorGrid) Quantize(
-	c int, pix int64, lim [2]float64, out [3][]uint64,
+	c int, pix uint64, lim [2]float64, out [3][]uint64,
 ) {
 	for i := 0; i < 3; i++ {
 		if len(out[i]) != int(vg.NSide*vg.NSide*vg.NSide) {
@@ -164,8 +184,8 @@ func Bound(x []uint64) (origin, width uint64) {
 
 // PeriodicBound returns the periodic bounds on the data contained in the array
 // x with a total width of pix.
-func PeriodicBound(pix int64, x []uint64) (origin, width uint64) {
-	x0, width := x[0], int64(1)
+func PeriodicBound(pix uint64, x []uint64) (origin, width uint64) {
+	x0, width := x[0], uint64(1)
 	for _, xi := range x {
 		x1 := x0 + width - 1
 		if x1 >= pix { x1 -= pix }
@@ -209,18 +229,18 @@ func Clip(pix, origin int64, x []int64) {
 
 func ConvertToLVec(
 	snap Snapshot,
-	cells, subCells int,
+	cells, subCells uint64,
 	dx, dv float64,
 	dir, fnameFormat string,
 	headerOption ...Header,
 ) error {
 	// If the user wants to update the Header, use that instead.
 	hd := snap.Header()
-	if len(headerOption) { hd = headerOption[0] }
+	if len(headerOption) > 0 { hd = &headerOption[0] }
 
-	if cells*subCells != hd.NSide {
-		panic("cells = %d, subCells = %d, but hd.NSide = %d",
-			cells, subCells, hd.NSide)
+	if int64(cells*subCells) != hd.NSide {
+		panic(fmt.Sprintf("cells = %d, subCells = %d, but hd.NSide = %d",
+			cells, subCells, hd.NSide))
 	} else if !snap.UniformMass() {
 		panic("Currently, non-uniform masses aren't implemented.")
 	} else if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -228,55 +248,106 @@ func ConvertToLVec(
 	}
 
 	lvHeader := &lvecHeader{
-		magic: LVecMagicNumber,
-		version: LVecVersion,
-		method: lvecBoxMethod,
-		hd: *hd
+		magic: LVecMagicNumber, version: LVecVersion,
+		cells: cells, subCells: subCells,
+		method: lvecBoxMethod, hd: *hd,
 	}
 	
-	xGrid, xLim := XGrid(snap, cells*subCells), [2]float64{0, hd.L}
+	grid, err := XGrid(snap, int(cells*subCells))
+	lvHeader.limits = [2]float64{0, hd.L}
 	lvHeader.varType = lvecX
-	err := writeLvec(lvHeader, xGrid, xLim, dir, fnameFormat)
+	lvHeader.delta = dx
+	lvHeader.pix = minPix(lvHeader.limits, lvHeader.delta)
+
+	err = createLVec(lvHeader, grid, dir, fnameFormat)
 	if err != nil { return err }
 
 	runtime.GC()
 
-	vGrid, xLim := VGrid(snap, cells*subCells), [2]float64{-5000, 5000}
-	lvHeader.varType = lvecX
-	err = writeLvec(lvHeader, vGrid, vLim, dir, fnameFormat)
+	grid, err = VGrid(snap, int(cells*subCells))
+	lvHeader.limits = grid.Limits()
+	lvHeader.varType = lvecV
+	lvHeader.delta = dv
+	lvHeader.pix = minPix(lvHeader.limits, lvHeader.delta)
+
+	err = createLVec(lvHeader, grid, dir, fnameFormat)
 	if err != nil { return err }
 
 	return nil
 }
 
-func writeLvec(
+func createLVec(
 	hd *lvecHeader,
-	grid *VectorGrid, lim [2]float64,
-	dir, fnameFormat string
-) err {
+	grid *VectorGrid,
+	dir, fnameFormat string,
+) error {
 	nCells := hd.cells*hd.cells*hd.cells
 	nSub := hd.subCells*hd.subCells*hd.subCells
 
-	bits := make([][3]byte, nSub)
-	offsets := make([][3]uint16, nSub)
-	arrays := make([]*DenseArray, nSub)
+	subCellVecs := make([]uint64, 3*nSub)
+	bits := make([]uint64, 3*nSub)
+	arrays := make([]*container.DenseArray, 3*nSub)
 
 	fnames := fnameList(hd, dir, fnameFormat)
+	quant := grid.IntBuffer()
 
-	for c := 0; c < nCell; c++ {
+	for c := uint64(0); c < nCells; c++ {
+		runtime.GC()
+
 		cx := c % hd.cells
 		cy := (c / hd.cells) % hd.cells
 		cz := c / (hd.cells * hd.cells)
-		for s := 0; s < nSub; s++ {
+		for s := uint64(0); s < nSub; s++ {
 			sx := s % hd.subCells
 			sy := (s / hd.subCells) % hd.subCells
 			sz := s / (hd.subCells * hd.subCells)
 
 			ix := cx*hd.subCells + sx
-			iy := cx*hd.subCells + sx
-			iz := cx*hd.subCells + sx
+			iy := cy*hd.subCells + sy
+			iz := cz*hd.subCells + sz
+
+			i := ix + iy*uint64(grid.NCell) + iz*uint64(grid.NCell*grid.NCell)
+
+			grid.Quantize(int(i), hd.pix, hd.limits, quant)
+
+			for j := uint64(0); j < 3; j++ {
+				var width uint64
+				if hd.varType == lvecX {
+					subCellVecs[3*s+j], width = PeriodicBound(hd.pix, quant[j])
+				} else {
+					subCellVecs[3*s+j], width = Bound(quant[j])
+				}
+
+				bits[3*s + j] = minBits(width)
+			}
 		}
+
+		bitsMin, bitsWidth := Bound(bits)
+		bitsBits := minBits(bitsWidth)
+		subCellVecsMin, subCellVecsWidth := Bound(subCellVecs)
+		subCellVecsBits := minBits(subCellVecsWidth)
+		
+		bitsArray := container.NewDenseArray(int(bitsBits), bits)
+		subCellVecsArray := container.NewDenseArray(
+			int(subCellVecsBits), subCellVecs,
+		)
+		
+		hd.bitsMin,   hd.subCellVectorsMin = bitsMin,  subCellVecsMin
+		hd.bitsBits, hd.subCellVectorsBits = bitsBits, subCellVecsBits
+
+		writeLVecFile(fnames[c], hd, subCellVecsArray, bitsArray, arrays)
 	}
+
+	return nil
+}
+
+func writeLVecFile(
+	fname string, hd *lvecHeader,
+	offsets *container.DenseArray,
+	bits *container.DenseArray, 
+	arrays []*container.DenseArray,
+) {
+	panic("NYI")
 }
 
 func fnameList(hd *lvecHeader, dir, fnameFormat string) []string {
@@ -298,50 +369,18 @@ func fnameList(hd *lvecHeader, dir, fnameFormat string) []string {
 	return fnames
 }
 
-func minPix(lim [2]float64, dx float64) int64 {
-	return int64(math.Ceil((lim[1] - lim[0]) / dx))
+func max(x []uint64) uint64 {
+	m := x[0]
+	for i := range x {
+		if m > x[i] { x[i] = m }
+	}
+	return m
 }
 
-/*
-	dx := []float64{5.8e-3/3, 5.8e-3, 5.8e-3*3}
-	dv := []float64{0.1, 0.3, 1.0}
-	xRange := [2]float64{0, 62.5}
-	vRange := [2]float64{-3500, 3500}
-	
-	xQuant := xGrid.IntBuffer()
-	fmt.Println("Position size:")
-	for i := range dx {
-		pix := minPix(xRange, dx[i])
+func minPix(lim [2]float64, dx float64) uint64 {
+	return uint64(math.Ceil((lim[1] - lim[0]) / dx))
+}
 
-		size := 0
-
-		for c := range xGrid.Cells {
-			xGrid.Quantize(c, pix, xRange, xQuant)
-			_, width0 := snapshot.PeriodicBound(pix, xQuant[0])
-			_, width1 := snapshot.PeriodicBound(pix, xQuant[1])
-			_, width2 := snapshot.PeriodicBound(pix, xQuant[2])
-			bit := bits(width0)+bits(width1)+bits(width2)
-			size += bit*len(xGrid.Cells[c]) + 16*3 + 8
-		}
-		fmt.Printf("%.3g ", float64(size / 8))
-	}
-	fmt.Println()
-
-	vQuant := vGrid.IntBuffer()
-	fmt.Println("Velocity size:")
-	for i := range dx {
-		pix := minPix(vRange, dv[i])
-
-		size := 0
-
-		for c := range vGrid.Cells {
-			xGrid.Quantize(c, pix, vRange, vQuant)
-			_, width0 := snapshot.PeriodicBound(pix, vQuant[0])
-			_, width1 := snapshot.PeriodicBound(pix, vQuant[1])
-			_, width2 := snapshot.PeriodicBound(pix, vQuant[2])
-			bit := bits(width0)+bits(width1)+bits(width2)
-			size += bit*len(vGrid.Cells[c]) + 16*3 + 8
-		}
-		fmt.Printf("%.3g ", float64(size / 8))
-	}
-*/
+func minBits(width uint64) uint64 {
+	return uint64(math.Ceil(math.Log2(float64(width + 1))))
+}
