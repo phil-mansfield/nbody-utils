@@ -175,7 +175,6 @@ func createLVec(
 	dir, fnameFormat string,
 ) error {
 	cells, sCells := hd.cells, hd.subCells
-	nCells := hd.cells*hd.cells*hd.cells
 	nSub := hd.subCells*hd.subCells*hd.subCells
 
 	subCellVecs := make([]uint64, 3*nSub)
@@ -192,36 +191,43 @@ func createLVec(
 			grid.Quantize(int(i), hd.pix, hd.limits, quant)
 			
 			for j := uint64(0); j < 3; j++ {
-				var width uint64
-				if hd.varType == lvecX {
-					subCellVecs[3*s+j], width = PeriodicBound(hd.pix, quant[j])
-				} else {
-					subCellVecs[3*s+j], width = Bound(quant[j])
-				}
-
-				Clip(hd.pix, subCellVecs[3*s+j], quant[j])
-				bits[3*s + j] = minBits(width)
+				k := 3*s + j
+				bits[k], subCellVecs[k], arrays[k] = toArray(
+					quant[j], hd.pix, hd.varType == lvecX,
+				)
 			}
 		})
 
-		bitsMin, bitsWidth := Bound(bits)
-		bitsBits := minBits(bitsWidth)
-		subCellVecsMin, subCellVecsWidth := Bound(subCellVecs)
-		subCellVecsBits := minBits(subCellVecsWidth)
-		
-		bitsArray := container.NewDenseArray(int(bitsBits), bits)
-		subCellVecsArray := container.NewDenseArray(
-			int(subCellVecsBits), subCellVecs,
+		var bitsArray, subCellVecsArray *container.DenseArray
+		hd.bitsBits, hd.bitsMin, bitsArray = toArray(
+			bits, 0, false,
 		)
-		
-		hd.bitsMin,   hd.subCellVectorsMin = bitsMin,  subCellVecsMin
-		hd.bitsBits, hd.subCellVectorsBits = bitsBits, subCellVecsBits
+		hd.subCellVectorsBits, hd.subCellVectorsMin, subCellVecsArray = toArray(
+			bits, 0, false,
+		)
 
 		err := writeLVecFile(fnames[c], hd, subCellVecsArray, bitsArray, arrays)
-		if err != nil { return err }
+		if err != nil { panic(err.Error()) } // .___.
 	})
 
 	return nil
+}
+
+func toArray(x []uint64, pix uint64, periodic bool) (
+	bits, min uint64, array *container.DenseArray,
+) {
+	var width uint64
+	if periodic {
+		min, width = PeriodicBound(pix, x)
+	} else {
+		min, width = Bound(x)
+	}
+
+	Clip(pix, min, x)
+	bits = minBits(width)
+	array = container.NewDenseArray(int(bits), x)
+
+	return bits, min, array
 }
 
 func writeLVecFile(
@@ -234,10 +240,8 @@ func writeLVecFile(
 	defer f.Close()
 	if err != nil { return err }
 
-	totalArrayData := 0
-	for _, array := range arrays {
-		totalArrayData += len(array.Data)
-	}
+	totalArrayData := uint64(0)
+	for _, a := range arrays { totalArrayData += uint64(len(a.Data)) }
 
 	hd.offsets[0] = uint64(unsafe.Sizeof(*hd)) + 8
 	hd.offsets[1] = uint64(len(subCellVecs.Data)) + 8 + hd.offsets[0]
@@ -245,32 +249,106 @@ func writeLVecFile(
 	hd.offsets[3] = uint64(totalArrayData) + 8 + hd.offsets[2]
 	fortranCheck(hd.offsets)
 
-	// header block
-	err = binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
+	err = writeHeaderBlock(f, hd)
+	if err != nil { return err }
+
+	err = writeSubCellVecsBlock(f, hd, subCellVecs)
+	if err != nil { return err }
+
+	err = writeBitsBlock(f, hd, subCellVecs)
+	if err != nil { return err }
+
+	err = writeArraysBlock(f, hd, arrays)
+	if err != nil { return err }
+
+	return nil
+}
+
+// writeHeaderBlock writes the first LVec block, the header.
+func writeHeaderBlock(f *os.File, hd *lvecHeader) error {
+	if loc, _ := f.Seek(0, 1); uint64(loc) != 0 {
+		panic(fmt.Sprintf("Internal I/O error: header block started at byte " + 
+			"%d, not byte %d.", loc, 0))
+	}
+
+	err := binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, hd)
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
 	if err != nil { return err }
 
-	// sub-cell vectors block
-	err = binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
+	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[0] {
+		panic(fmt.Sprintf("Internal I/O error: header block ended at byte " + 
+			"%d, not byte %d.", loc, hd.offsets[0]))
+	}
+
+	return nil
+}
+
+// writeHeaderBlock writes the second LVec block, the quantized vectors to every
+// sub-cell.
+func writeSubCellVecsBlock(
+	f *os.File, hd *lvecHeader, subCellVecs *container.DenseArray,
+) error {
+	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[0] {
+		panic(fmt.Sprintf("Internal I/O error: vector block started at byte " + 
+			"%d, not byte %d.", loc, hd.offsets[0]))
+	}
+
+	err := binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, subCellVecs.Data)
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
 	if err != nil { return err }
 
-	// bits block
-	err = binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
+	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[1] {
+		panic(fmt.Sprintf("Internal I/O error: vector block ended at byte " + 
+			"%d, not byte %d.", loc, hd.offsets[1]))
+	}
+
+	return nil
+}
+
+// writeBitsBlock writes the third LVec block, the number of bits in each array.
+func writeBitsBlock(
+	f *os.File, hd *lvecHeader, bits *container.DenseArray,
+) error {
+	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[1] {
+		panic(fmt.Sprintf("Internal I/O error: vector block started at byte " + 
+			"%d, not byte %d.", loc, hd.offsets[1]))
+	}
+
+	err := binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, bits.Data)
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
 	if err != nil { return err }
 
-	// data block
-	err = binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
+	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[2] {
+		panic(fmt.Sprintf("Internal I/O error: vector block ended at byte " + 
+			"%d, not byte %d.", loc, hd.offsets[2]))
+	}
+
+	return nil
+}
+
+// writeArraysBlock writes the fourth and final LVec block, the array data for
+// each sub-cell.
+func writeArraysBlock(
+	f *os.File, hd *lvecHeader, arrays []*container.DenseArray,
+) error {
+	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[1] {
+		panic(fmt.Sprintf("Internal I/O error: vector block started at byte " + 
+			"%d, not byte %d.", loc, hd.offsets[1]))
+	}
+
+	totalArrayData := uint64(0)
+	for _, a := range arrays { totalArrayData += uint64(len(a.Data)) }
+
+	err := binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
 	if err != nil { return err }
 	for _, array := range arrays {
 		err = binary.Write(f, binary.LittleEndian, array.Data)
@@ -279,8 +357,14 @@ func writeLVecFile(
 	err = binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
 	if err != nil { return err }
 
+	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[3] {
+		panic(fmt.Sprintf("Internal I/O error: vector block ended at byte " + 
+			"%d, not byte %d.", loc, hd.offsets[3]))
+	}
+
 	return nil
 }
+
 
 // fortranCheck ensures that all file blocks are small enough that they can have
 // valid header/footer ints in Fortran. It panics if this is not true.
