@@ -148,6 +148,10 @@ func (snap *lGadget2Snapshot) Header() *Header {
 	return &snap.hd
 }
 
+func (snap *lGadget2Snapshot) UpdateHeader(hd *Header) {
+	snap.hd = *hd
+}
+
 func (snap *lGadget2Snapshot) Index() *Index {
 	panic("NYI")
 }
