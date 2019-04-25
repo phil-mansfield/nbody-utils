@@ -36,11 +36,9 @@ type lvecHeader struct {
 	delta     float64 // The user-specified delta parameter. Each component of
                       // each vector will be stored to at least this accuracy.
 
-	// These fields aren't neccessary, but they are very convenient.
-	subCellVectorOffset uint64 // Offset to subCell vector block in bytes.
-	subCellBitsOffset   uint64 // Offset to subCell bits block in bytes.
-	dataOffset          uint64 // Offset to the data block in bytes.
-	endOffset           uint64 // Offset to the end of the file in bytes.
+	offsets [4]uint64 // The offsets to the start of the sub-cell vector block,
+	                  // the bits block, and the data block, respetively. This
+	                  // isn't neccessary, but it sure is convenient.
 
 	hd Header // The header for the simulation.
 }

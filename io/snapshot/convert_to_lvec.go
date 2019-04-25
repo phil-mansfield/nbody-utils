@@ -335,7 +335,8 @@ func createLVec(
 		hd.bitsMin,   hd.subCellVectorsMin = bitsMin,  subCellVecsMin
 		hd.bitsBits, hd.subCellVectorsBits = bitsBits, subCellVecsBits
 
-		writeLVecFile(fnames[c], hd, subCellVecsArray, bitsArray, arrays)
+		err := writeLVecFile(fnames[c], hd, subCellVecsArray, bitsArray, arrays)
+		if err != nil { return err }
 	}
 
 	return nil
@@ -343,11 +344,86 @@ func createLVec(
 
 func writeLVecFile(
 	fname string, hd *lvecHeader,
-	offsets *container.DenseArray,
+	subCellVecs *container.DenseArray,
 	bits *container.DenseArray, 
 	arrays []*container.DenseArray,
-) {
-	panic("NYI")
+) error {
+	f, err := os.Create(fname)
+	defer f.Close()
+	if err != nil { return err }
+
+	totalArrayData := 0
+	for _, array := range arrays {
+		totalArrayData += len(array.Data)
+	}
+
+	hd.offsets[0] = uint64(unsafe.Sizeof(*hd)) + 8
+	hd.offsets[1] = uint64(len(subCellVecs.Data)) + 8 + hd.offsets[0]
+	hd.offsets[2] = uint64(len(bits.Data)) + 8 + hd.offsets[1]
+	hd.offsets[3] = uint64(totalArrayData) + 8 + hd.offsets[2]
+	fortranCheck(hd.offsets)
+
+	// header block
+	err := binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, hd)
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
+	if err != nil { return err }
+
+	// sub-cell vectors block
+	err = binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, subCellVecs.Data)
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
+	if err != nil { return err }
+
+	// bits block
+	err = binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, bits.Data)
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
+	if err != nil { return err }
+
+	// data block
+	err = binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
+	if err != nil { return err }
+	for _, array := range arrays {
+		err = binary.Write(f, binary.LittleEndian, array.Data)
+		if err != nil { return err }
+	}
+	err = binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
+	if err != nil { return err }
+
+	return nil
+}
+
+// fortranCheck ensures that all file blocks are small enough that they can have
+// valid header/footer ints in Fortran. It panics if this is not true.
+//
+// I'm super super happy that I still have to be doing this in
+// the-year-of-our-lord-2019.
+func fortranCheck(offsets [4]uint64) {
+	headerSize := offsets[0] - 8
+	subCellVecsSize := offsets[1] - offsets[0] - 8
+	bitsSize := offsets[2] - offsets[1] - 8
+	dataSize := offsets[3] - offsets[2] - 8
+	
+	if headerSize > math.Int32Max {
+		panic(fmt.Sprintf("Internal failure: header block has size %d " + 
+			"and will be too big to read by Fortran codes.", headerSize))
+	} else if subCellVecsSize > math.Int32Max {
+		panic(fmt.Sprintf("Internal failure: sub-cell vector block has size "+
+			"%d and will be too big to read by Fortran codes.",subCellVecsSize))
+	} else if bitsSize > math.Int32Max {
+		panic(fmt.Sprintf("Internal failure: bits block has size %d " + 
+			"and will be too big to read by Fortran codes.", bitsSize))
+	} else if dataSize > math.Int32Max {
+		panic(fmt.Sprintf("Internal failure: data block has size %d " + 
+			"and will be too big to read by Fortran codes.", Size))
+	}
 }
 
 func fnameList(hd *lvecHeader, dir, fnameFormat string) []string {
