@@ -174,6 +174,7 @@ func createLVec(
 	grid *VectorGrid,
 	dir, fnameFormat string,
 ) error {
+	cells, sCells := hd.cells, hd.subCells
 	nCells := hd.cells*hd.cells*hd.cells
 	nSub := hd.subCells*hd.subCells*hd.subCells
 
@@ -184,25 +185,12 @@ func createLVec(
 	fnames := fnameList(hd, dir, fnameFormat)
 	quant := grid.IntBuffer()
 
-	for c := uint64(0); c < nCells; c++ {
+	grid.SuperCellLoop(cells, func(c uint64, cIdx [3]uint64) {
 		runtime.GC()
 
-		cx := c % hd.cells
-		cy := (c / hd.cells) % hd.cells
-		cz := c / (hd.cells * hd.cells)
-		for s := uint64(0); s < nSub; s++ {
-			sx := s % hd.subCells
-			sy := (s / hd.subCells) % hd.subCells
-			sz := s / (hd.subCells * hd.subCells)
-
-			ix := cx*hd.subCells + sx
-			iy := cy*hd.subCells + sy
-			iz := cz*hd.subCells + sz
-
-			i := ix + iy*uint64(grid.NCell) + iz*uint64(grid.NCell*grid.NCell)
-
+		grid.SubCellLoop(cells, sCells, cIdx, func(i,s uint64, sIdx [3]uint64) {
 			grid.Quantize(int(i), hd.pix, hd.limits, quant)
-
+			
 			for j := uint64(0); j < 3; j++ {
 				var width uint64
 				if hd.varType == lvecX {
@@ -214,7 +202,7 @@ func createLVec(
 				Clip(hd.pix, subCellVecs[3*s+j], quant[j])
 				bits[3*s + j] = minBits(width)
 			}
-		}
+		})
 
 		bitsMin, bitsWidth := Bound(bits)
 		bitsBits := minBits(bitsWidth)
@@ -231,7 +219,7 @@ func createLVec(
 
 		err := writeLVecFile(fnames[c], hd, subCellVecsArray, bitsArray, arrays)
 		if err != nil { return err }
-	}
+	})
 
 	return nil
 }

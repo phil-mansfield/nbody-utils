@@ -39,7 +39,7 @@ func (g *Grid) Index(id int64) (c, i int64) {
 	return c, i
 }
 
-func superCellLoop(
+func (*Grid) SuperCellLoop(
 	superCells uint64, 
 	callback func(c uint64, cIdx [3]uint64),
 ) {
@@ -54,7 +54,7 @@ func superCellLoop(
 	}
 }
 
-func subCellLoop(
+func (*Grid) SubCellLoop(
 	superCells, subCells uint64, cIdx [3]uint64,
 	callback func(i, s uint64, sIdx [3]uint64),
 ) {
