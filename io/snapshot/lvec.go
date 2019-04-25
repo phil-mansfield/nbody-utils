@@ -119,17 +119,19 @@ func Clip(pix, origin uint64, x []uint64) {
 	}
 }
 
-
+// ConvertToLVec converts a snapshot to a set of LVec files. cells is the number
+// of file-sized cells on one side, subCells is the number of within-file cells
+// on one side, dx and dy are the accuracy parameters for distance and velocity,
+// respectively, dir is the directory that the files will be wirtten to, and
+// fnameFormat is the printf format string used to generate file names and must
+// contain a %s verb followed by a %d verb.
 func ConvertToLVec(
 	snap Snapshot,
 	cells, subCells uint64,
 	dx, dv float64,
 	dir, fnameFormat string,
-	headerOption ...Header,
 ) error {
-	// If the user wants to update the Header, use that instead.
 	hd := snap.Header()
-	if len(headerOption) > 0 { hd = &headerOption[0] }
 
 	if int64(cells*subCells) != hd.NSide {
 		panic(fmt.Sprintf("cells = %d, subCells = %d, but hd.NSide = %d",
@@ -152,7 +154,7 @@ func ConvertToLVec(
 	lvHeader.delta = dx
 	lvHeader.pix = minPix(lvHeader.limits, lvHeader.delta)
 
-	err = createLVec(lvHeader, grid, dir, fnameFormat)
+	err = generateLVec(lvHeader, grid, dir, fnameFormat)
 	if err != nil { return err }
 
 	runtime.GC()
@@ -163,13 +165,14 @@ func ConvertToLVec(
 	lvHeader.delta = dv
 	lvHeader.pix = minPix(lvHeader.limits, lvHeader.delta)
 
-	err = createLVec(lvHeader, grid, dir, fnameFormat)
+	err = generateLVec(lvHeader, grid, dir, fnameFormat)
 	if err != nil { return err }
 
 	return nil
 }
 
-func createLVec(
+// generateLVec generates all the LVec files associated with the data in grid.
+func generateLVec(
 	hd *lvecHeader,
 	grid *VectorGrid,
 	dir, fnameFormat string,
@@ -213,6 +216,9 @@ func createLVec(
 	return nil
 }
 
+// toArray compresses an array of integers into a DenseArray and returns the
+// information neccessary to decode this array, the minimum value of the
+// data and the number of bits in the DenseArray.
 func toArray(x []uint64, pix uint64, periodic bool) (
 	bits, min uint64, array *container.DenseArray,
 ) {
@@ -230,6 +236,7 @@ func toArray(x []uint64, pix uint64, periodic bool) (
 	return bits, min, array
 }
 
+// writeLVecFile writes an LVec file to disk
 func writeLVecFile(
 	fname string, hd *lvecHeader,
 	subCellVecs *container.DenseArray,
