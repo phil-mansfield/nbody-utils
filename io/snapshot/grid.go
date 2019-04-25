@@ -1,7 +1,7 @@
 package snapshot
 
 import (
-	//"encoding/binary"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path"
@@ -9,6 +9,8 @@ import (
 	"runtime"
 
 	"github.com/phil-mansfield/nbody-utils/container"
+
+	"unsafe"
 )
 
 // Grid manages the geometry of a cube which has been split up into cubic
@@ -43,6 +45,46 @@ func (g *Grid) Index(id int64) (c, i int64) {
 	c = cx + cy*g.NCell + cz*g.NCell*g.NCell
 
 	return c, i
+}
+
+func superCellLoop(
+	superCells uint64, 
+	callback func(c uint64, cIdx [3]uint64),
+) {
+	nSuperCells := superCells * superCells * superCells
+
+	for c := uint64(0); c < nSuperCells; c++ {
+		runtime.GC()
+
+		cx := c % superCells
+		cy := (c / superCells) % superCells
+		cz := c / (superCells * superCells)
+
+		callback(c, [3]uint64{cx, cy, cz})
+	}
+}
+
+func subCellLoop(
+	superCells, subCells uint64, cIdx [3]uint64,
+	callback func(i, s uint64, sIdx [3]uint64),
+) {
+	cx, cy, cz := cIdx[0], cIdx[1], cIdx[2]
+	nSub := subCells * subCells * subCells
+	cells := subCells*superCells
+
+	for s := uint64(0); s < nSub; s++ {
+		sx := s % subCells
+		sy := (s / subCells) % subCells
+		sz := s / (subCells * subCells)
+		
+		ix := cx*subCells + sx
+		iy := cy*subCells + sy
+		iz := cz*subCells + sz
+		
+		i := ix + iy*cells + iz*cells*cells
+
+		callback(i, s, [3]uint64{sx, sy, sz})
+	}
 }
 
 // VectorGrid is a segmented cubic grid that stores float32 vectors in cubic
@@ -185,44 +227,52 @@ func Bound(x []uint64) (origin, width uint64) {
 // PeriodicBound returns the periodic bounds on the data contained in the array
 // x with a total width of pix.
 func PeriodicBound(pix uint64, x []uint64) (origin, width uint64) {
-	x0, width := x[0], uint64(1)
-	for _, xi := range x {
-		x1 := x0 + width - 1
-		if x1 >= pix { x1 -= pix }
+	x0, iwidth, ipix := int64(x[0]), int64(1), int64(pix)
 
-		d0 := periodicDistance(xi, x0, pix)
-		d1 := periodicDistance(xi, x1, pix)
+	for _, xu := range x {
+		xi := int64(xu)
+
+		x1 := x0 + iwidth - 1
+		if x1 >= ipix { x1 -= ipix }
+
+		d0 := periodicDistance(xi, x0, ipix)
+		d1 := periodicDistance(xi, x1, ipix)
 
 		if d0 > 0 && d1 < 0 { continue }
 
 		if d1 > -d0 {
-			width += d1
+			iwidth += d1
 		} else {
 			x0 += d0
-			if x0 < 0 { x0 += pix }
-			width -= d0
+			if x0 < 0 { x0 += ipix }
+			iwidth -= d0
 		}
 
-		if width > pix/2 { return 0, pix }
+		if iwidth > ipix/2 { return 0, uint64(ipix) }
 	}
 
-	return x0, width
+	return uint64(x0), uint64(iwidth)
 }
 
-func periodicDistance(x, x0, pix uint64) uint64 {
-	d := x - x0
+// periodicDistance computes the distance from x0 to x.
+func periodicDistance(x, x0, pix int64) int64 {
+	ix, ix0, ipix := int64(x), int64(x0), int64(pix)
+
+	d := ix - ix0
 	if d >= 0 {
-		if d > pix - d { return d - pix }
+		if d > ipix - d { return d - ipix }
 	} else {
-		if d < -(d + pix) { return pix + d }
+		if d < -(d + ipix) { return ipix + d }
 	}
 	return d
 }
 
-func Clip(pix, origin int64, x []int64) {
+// Clip 
+func Clip(pix, origin uint64, x []uint64) {
 	for i := range x {
-		x[i] -= origin
-		if x[i] < 0 { x[i] += pix }
+		xi := int64(x[i]) - int64(origin)
+		if x[i] < 0 { xi += int64(pix) }
+		x[i] = uint64(x[i])
 	}
 }
 
@@ -318,6 +368,7 @@ func createLVec(
 					subCellVecs[3*s+j], width = Bound(quant[j])
 				}
 
+				Clip(hd.pix, subCellVecs[3*s+j], quant[j])
 				bits[3*s + j] = minBits(width)
 			}
 		}
@@ -364,7 +415,7 @@ func writeLVecFile(
 	fortranCheck(hd.offsets)
 
 	// header block
-	err := binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
+	err = binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, hd)
 	if err != nil { return err }
@@ -411,21 +462,23 @@ func fortranCheck(offsets [4]uint64) {
 	bitsSize := offsets[2] - offsets[1] - 8
 	dataSize := offsets[3] - offsets[2] - 8
 	
-	if headerSize > math.Int32Max {
+	if headerSize > math.MaxInt32 {
 		panic(fmt.Sprintf("Internal failure: header block has size %d " + 
 			"and will be too big to read by Fortran codes.", headerSize))
-	} else if subCellVecsSize > math.Int32Max {
+	} else if subCellVecsSize > math.MaxInt32 {
 		panic(fmt.Sprintf("Internal failure: sub-cell vector block has size "+
 			"%d and will be too big to read by Fortran codes.",subCellVecsSize))
-	} else if bitsSize > math.Int32Max {
+	} else if bitsSize > math.MaxInt32 {
 		panic(fmt.Sprintf("Internal failure: bits block has size %d " + 
 			"and will be too big to read by Fortran codes.", bitsSize))
-	} else if dataSize > math.Int32Max {
+	} else if dataSize > math.MaxInt32 {
 		panic(fmt.Sprintf("Internal failure: data block has size %d " + 
-			"and will be too big to read by Fortran codes.", Size))
+			"and will be too big to read by Fortran codes.", dataSize))
 	}
 }
 
+// fnameList returns a slice of file names in dir that follow the format
+// string fnameFormat corresponding to the data described by hd.
 func fnameList(hd *lvecHeader, dir, fnameFormat string) []string {
 	nCells := hd.cells*hd.cells*hd.cells
 	fnames := make([]string, nCells)
@@ -445,6 +498,7 @@ func fnameList(hd *lvecHeader, dir, fnameFormat string) []string {
 	return fnames
 }
 
+// max returns the maximum element of x.
 func max(x []uint64) uint64 {
 	m := x[0]
 	for i := range x {
@@ -453,10 +507,13 @@ func max(x []uint64) uint64 {
 	return m
 }
 
+// minPix returns the minimum number of pixels required to store points between
+// [lim[0], lim[1]) with an accuracy of dx or better.
 func minPix(lim [2]float64, dx float64) uint64 {
 	return uint64(math.Ceil((lim[1] - lim[0]) / dx))
 }
 
+// minBits returns the number of bits needed to represent the number width.
 func minBits(width uint64) uint64 {
 	return uint64(math.Ceil(math.Log2(float64(width + 1))))
 }
