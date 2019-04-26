@@ -75,8 +75,12 @@ func unbound(origin uint64, x []uint64) {
 }
 
 // PeriodicBound returns the periodic bounds on the data contained in the array
-// x with a total width of pix.
-func periodicBound(pix uint64, x []uint64) (origin, width uint64) {
+// x with a total width of pix. pix must be less than MaxInt64
+func periodicBound(pix uint64, x []uint64) (origin, width uint64) {	
+	if pix > math.MaxInt64 {
+		panic(fmt.Sprintf("pix = %d, but MaxInt64 = %d", pix, math.MaxInt64))
+	}
+
 	x0, iwidth, ipix := int64(x[0]), int64(1), int64(pix)
 
 	for _, xu := range x {
@@ -102,9 +106,9 @@ func periodicBound(pix uint64, x []uint64) (origin, width uint64) {
 	}
 
 	for i := range x {
-		xi := int64(x[i]) - int64(origin)
-		if x[i] < 0 { xi += int64(pix) }
-		x[i] = uint64(x[i])
+		xi := int64(x[i]) - x0
+		if xi < 0 { xi += int64(pix) }
+		x[i] = uint64(xi)
 	}
 
 	return uint64(x0), uint64(iwidth)
@@ -126,7 +130,7 @@ func periodicDistance(x, x0, pix int64) int64 {
 func periodicUnbound(pix, origin uint64, x []uint64) {
 	for i := range x {
 		x[i] += origin
-		if x[i] > pix { x[i] -= pix }
+		if x[i] >= pix { x[i] -= pix }
 	}
 }
 

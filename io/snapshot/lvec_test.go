@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"io/ioutil"
+	"math"
 	"os"
 	"testing"
 
@@ -157,7 +158,7 @@ func TestBlockIO(t *testing.T) {
 	rdArrays, err := readArraysBlock(f, &hd, bits)
 
 	if len(arrays) != len(rdArrays) {
-		t.Errorf("Length of arrays is %d, but lenght of read arrays is %d",
+		t.Errorf("Length of arrays is %d, but length of read arrays is %d",
 			len(arrays), len(rdArrays))
 	} else {
 		for i := range arrays {
@@ -209,7 +210,53 @@ func TestBound(t *testing.T) {
 		unbound(origin, x)
 
 		if !uint64sEq(tests[i].x, x) {
-			t.Errorf("test %d) bound(unbound) gave %d, not %d", x, tests[i].x)
+			t.Errorf("test %d) bound(unbound) gave %d, not %d",
+				i, x, tests[i].x)
+		}
+	}
+}
+
+func TestPeriodicBound(t *testing.T) {
+	tests := []struct{
+		x, xOut []uint64
+		origin, width, pix uint64
+	} {
+		{ []uint64{0}, []uint64{0}, 0, 1, math.MaxInt64 },
+		{ []uint64{0, 1}, []uint64{0, 1}, 0, 2, math.MaxInt64 },
+		{ []uint64{1, 2}, []uint64{0, 1}, 1, 2, math.MaxInt64 },
+		{ []uint64{10, 12, 14}, []uint64{0, 2, 4}, 10, 5, math.MaxInt64 },
+		{ []uint64{10, 0, 2}, []uint64{0, 2, 4}, 10, 5, 12 },
+		{ []uint64{10, 12, 14}, []uint64{0, 2, 4}, 10, 5, 15 },
+		{ []uint64{1, 2, 3}, []uint64{1, 2, 3}, 0, 4, 4 }, 
+		{ []uint64{8, 9, 0, 1}, []uint64{0, 1, 2, 3}, 8, 4, 10}, 
+		{ []uint64{9, 0, 1, 8}, []uint64{1, 2, 3, 0}, 8, 4, 10}, 
+		{ []uint64{0, 1, 8, 9}, []uint64{2, 3, 0, 1}, 8, 4, 10}, 
+		{ []uint64{1, 8, 9, 0}, []uint64{3, 0, 1, 2}, 8, 4, 10}, 
+	}
+
+	for i := range tests {
+		x := make([]uint64, len(tests[i].x))
+		for j := range x { x[j] = tests[i].x[j] }
+		origin, width := periodicBound(tests[i].pix, x)
+
+		if origin != tests[i].origin {
+			t.Errorf("test %d) expected origin = %d, got %d",
+				i, tests[i].origin, origin)
+		}
+		if width != tests[i].width {
+			t.Errorf("test %d) expected width = %d, got %d",
+				i, tests[i].width, width)
+		}
+		if !uint64sEq(tests[i].xOut, x) {
+			t.Errorf("test %d) expected x = %d, got %d",
+				i, tests[i].xOut, x)
+		}
+
+		periodicUnbound(tests[i].pix, origin, x)
+
+		if !uint64sEq(tests[i].x, x) {
+			t.Errorf("test %d) bound(unbound) gave %d, not %d",
+				i, x, tests[i].x)
 		}
 	}
 }
