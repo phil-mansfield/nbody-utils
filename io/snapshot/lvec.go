@@ -289,14 +289,12 @@ func writeLVecFile(
 func writeHeaderBlock(f *os.File, hd *lvecHeader) error {
 	offsetCheck(f, 0, "header", "start")
 
-	err := binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
+	err := binary.Write(f, binary.LittleEndian, int32(unsafe.Sizeof(*hd)))
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, hd)
 	if err != nil { return err }
-	err = binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
+	err = binary.Write(f, binary.LittleEndian, int32(unsafe.Sizeof(*hd)))
 	if err != nil { return err }
-
-	offsetCheck(f, hd.offsets[0], "header", "end")
 
 	return nil
 }
@@ -328,11 +326,11 @@ func writeSubCellVecsBlock(
 ) error {
 	offsetCheck(f, hd.offsets[0], "vector", "start")
 	
-	err := binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
+	err := binary.Write(f, binary.LittleEndian, int32(len(subCellVecs.Data)))
 	if err != nil { return err }
 	_, err = f.Write(subCellVecs.Data)
 	if err != nil { return err }
-	err = binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
+	err = binary.Write(f, binary.LittleEndian, int32(len(subCellVecs.Data)))
 	if err != nil { return err }
 
 	offsetCheck(f, hd.offsets[1], "vector", "end")
@@ -368,11 +366,11 @@ func writeBitsBlock(
 ) error {
 	offsetCheck(f, hd.offsets[1], "bits", "start")
 
-	err := binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
+	err := binary.Write(f, binary.LittleEndian, int32(len(bits.Data)))
 	if err != nil { return err }
 	_, err = f.Write(bits.Data)
 	if err != nil { return err }
-	err = binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
+	err = binary.Write(f, binary.LittleEndian, int32(len(bits.Data)))
 	if err != nil { return err }
 
 	offsetCheck(f, hd.offsets[1], "bits", "end")
@@ -412,13 +410,13 @@ func writeArraysBlock(
 	totalArrayData := uint64(0)
 	for _, a := range arrays { totalArrayData += uint64(len(a.Data)) }
 
-	err := binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
+	err := binary.Write(f, binary.LittleEndian, int32(totalArrayData))
 	if err != nil { return err }
 	for _, array := range arrays {
 		_, err = f.Write(array.Data)
 		if err != nil { return err }
 	}
-	err = binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
+	err = binary.Write(f, binary.LittleEndian, int32(totalArrayData))
 	if err != nil { return err }
 
 	offsetCheck(f, hd.offsets[3], "array", "end")
