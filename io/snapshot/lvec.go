@@ -389,8 +389,8 @@ func readBitsBlock(
 	offsetCheck(f, hd.Offsets[1], "bits", "start")
 
 	fortran := [2]int32{ }
-	nElem := uint64(hd.Hd.NSide) / (hd.Cells*hd.SubCells)
-	array := createDenseArray(3*nElem*nElem*nElem, hd.BitsBits)
+	nSub := hd.SubCells*hd.SubCells*hd.SubCells
+	array := createDenseArray(3*nSub, hd.BitsBits)
 
 	err := binary.Read(f, binary.LittleEndian, &fortran[0])
 	if err != nil { return nil, err }

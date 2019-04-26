@@ -92,10 +92,28 @@ func TestBlockIO(t *testing.T) {
 	
 	hd.BitsMin, hd.BitsBits = 6, 5
 	nElem := uint64(hd.Hd.NSide) / (hd.Cells*hd.SubCells)
-	bits := make([]uint64, 3 * nElem*nElem*nElem)
+	nElem3 := nElem*nElem*nElem
+	nSubCells3 := hd.SubCells*hd.SubCells*hd.SubCells
+
+	bits := make([]uint64, 3 * nSubCells3)
 	for i := range bits { bits[i] = uint64(i) + 6 }
 	bitsArray := container.NewDenseArray(int(hd.BitsBits), bits)
 	hd.Offsets[2] = hd.Offsets[1] + 8 + uint64(len(bitsArray.Data))
+
+	arrays := make([]*container.DenseArray, 3*nSubCells3)
+	k, totalLen := uint64(0), uint64(0)
+	for i := range arrays {
+		data := make([]uint64, nElem3)
+		for j := range data {
+			data[j] = k
+			k++
+		}
+
+		arrays[i] = container.NewDenseArray(int(bits[i]), data)
+		totalLen += uint64(len(arrays[i].Data))
+	}
+
+	hd.Offsets[3] = hd.Offsets[2] + 8 + totalLen
 
 	err = writeHeaderBlock(f, &hd)
 	if err != nil { t.Fatalf(err.Error()) }
@@ -105,7 +123,10 @@ func TestBlockIO(t *testing.T) {
 
 	err = writeBitsBlock(f, &hd, bitsArray)
 	if err != nil { t.Fatalf(err.Error()) }
-		
+	
+	err = writeArraysBlock(f, &hd, arrays)
+	if err != nil { t.Fatalf(err.Error()) }
+	
 	f.Seek(0, 0)
 		
 	rdHd, err := readHeaderBlock(f)
@@ -131,5 +152,19 @@ func TestBlockIO(t *testing.T) {
 	if !denseArrayEq(bitsArray, rdBitsArray) {
 		t.Errorf("Wrote vector array %v, but read vector array %v.",
 			bitsArray, rdBitsArray)
+	}
+
+	rdArrays, err := readArraysBlock(f, &hd, bits)
+
+	if len(arrays) != len(rdArrays) {
+		t.Errorf("Length of arrays is %d, but lenght of read arrays is %d",
+			len(arrays), len(rdArrays))
+	} else {
+		for i := range arrays {
+			if !denseArrayEq(arrays[i], rdArrays[i]) {
+				t.Errorf("array %d = %v, but read aray = %v",
+					i, arrays[i], rdArrays[i])
+			}
+		}
 	}
 }
