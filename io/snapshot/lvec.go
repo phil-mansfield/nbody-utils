@@ -58,19 +58,25 @@ type lvecHeader struct {
 }
 
 
-func Bound(x []uint64) (origin, width uint64) {
+func bound(x []uint64) (origin, width uint64) {
 	min, max := x[0], x[0]
 	for i := range x {
 		if x[i] < min { min = x[i] }
 		if x[i] > max { max = x[i] }
 	}
 
-	return min, max - min
+	for i := range x { x[i] -= min }
+
+	return min, max - min + 1
+}
+
+func unbound(origin uint64, x []uint64) {
+	for i := range x { x[i] += origin }
 }
 
 // PeriodicBound returns the periodic bounds on the data contained in the array
 // x with a total width of pix.
-func PeriodicBound(pix uint64, x []uint64) (origin, width uint64) {
+func periodicBound(pix uint64, x []uint64) (origin, width uint64) {
 	x0, iwidth, ipix := int64(x[0]), int64(1), int64(pix)
 
 	for _, xu := range x {
@@ -95,6 +101,12 @@ func PeriodicBound(pix uint64, x []uint64) (origin, width uint64) {
 		if iwidth > ipix/2 { return 0, uint64(ipix) }
 	}
 
+	for i := range x {
+		xi := int64(x[i]) - int64(origin)
+		if x[i] < 0 { xi += int64(pix) }
+		x[i] = uint64(x[i])
+	}
+
 	return uint64(x0), uint64(iwidth)
 }
 
@@ -111,12 +123,10 @@ func periodicDistance(x, x0, pix int64) int64 {
 	return d
 }
 
-// Clip 
-func Clip(pix, origin uint64, x []uint64) {
+func periodicUnbound(pix, origin uint64, x []uint64) {
 	for i := range x {
-		xi := int64(x[i]) - int64(origin)
-		if x[i] < 0 { xi += int64(pix) }
-		x[i] = uint64(x[i])
+		x[i] += origin
+		if x[i] > pix { x[i] -= pix }
 	}
 }
 
@@ -228,12 +238,11 @@ func toArray(x []uint64, pix uint64, periodic bool) (
 ) {
 	var width uint64
 	if periodic {
-		min, width = PeriodicBound(pix, x)
+		min, width = periodicBound(pix, x)
 	} else {
-		min, width = Bound(x)
+		min, width = bound(x)
 	}
 
-	Clip(pix, min, x)
 	bits = minBits(width)
 	array = container.NewDenseArray(int(bits), x)
 

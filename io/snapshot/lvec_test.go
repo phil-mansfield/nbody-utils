@@ -117,7 +117,7 @@ func TestBlockIO(t *testing.T) {
 
 	err = writeHeaderBlock(f, &hd)
 	if err != nil { t.Fatalf(err.Error()) }
-
+	
 	err = writeSubCellVecsBlock(f, &hd, vecArray)
 	if err != nil { t.Fatalf(err.Error()) }
 
@@ -165,6 +165,51 @@ func TestBlockIO(t *testing.T) {
 				t.Errorf("array %d = %v, but read aray = %v",
 					i, arrays[i], rdArrays[i])
 			}
+		}
+	}
+}
+
+func uint64sEq(x1, x2 []uint64) bool {
+	if len(x1) != len(x2) { return false }
+	for i := range x1 {
+		if x1[i] != x2[i] { return false }
+	}
+	return true
+}
+
+func TestBound(t *testing.T) {
+	tests := []struct{
+		x, xOut []uint64
+		origin, width uint64
+	} {
+		{ []uint64{0}, []uint64{0}, 0, 1 },
+		{ []uint64{0, 1}, []uint64{0, 1}, 0, 2 },
+		{ []uint64{1, 2}, []uint64{0, 1}, 1, 2 },
+		{ []uint64{10, 12, 14}, []uint64{0, 2, 4}, 10, 5 },
+	}
+
+	for i := range tests {
+		x := make([]uint64, len(tests[i].x))
+		for j := range x { x[j] = tests[i].x[j] }
+		origin, width := bound(x)
+
+		if origin != tests[i].origin {
+			t.Errorf("test %d) expected origin = %d, got %d",
+				i, tests[i].origin, origin)
+		}
+		if width != tests[i].width {
+			t.Errorf("test %d) expected width = %d, got %d",
+				i, tests[i].width, width)
+		}
+		if !uint64sEq(tests[i].xOut, x) {
+			t.Errorf("test %d) expected x = %d, got %d",
+				i, tests[i].xOut, x)
+		}
+
+		unbound(origin, x)
+
+		if !uint64sEq(tests[i].x, x) {
+			t.Errorf("test %d) bound(unbound) gave %d, not %d", x, tests[i].x)
 		}
 	}
 }
