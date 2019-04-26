@@ -1,6 +1,7 @@
 package snapshot
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -135,5 +136,64 @@ func TestVectorBlockIO(t *testing.T) {
 	if !denseArrayEq(vecArray, rdVecArray) {
 		t.Errorf("Wrote vector array %v, but read vector array %v.",
 			vecArray, rdVecArray)
+	}
+}
+
+func TestBitsBlockIO(t *testing.T) {
+	f, err := ioutil.TempFile(".", "test_*.lvec")
+	if err != nil { panic(err.Error()) }
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	hd := *testHeader
+	vecs := make([]uint64, 3 * hd.SubCells*hd.SubCells*hd.SubCells)
+	for i := range vecs { vecs[i] = uint64(i) + 10 }
+	hd.SubCellVectorsMin, hd.SubCellVectorsBits = 10, 4
+	vecArray := container.NewDenseArray(int(hd.SubCellVectorsBits), vecs)
+	hd.Offsets[1] = hd.Offsets[0] + 8 + uint64(len(vecArray.Data))
+	
+	hd.BitsMin, hd.BitsBits = 6, 5
+	nElem := uint64(hd.Hd.NSide) / (hd.Cells*hd.SubCells)
+	bits := make([]uint64, 3 * nElem*nElem*nElem)
+	for i := range bits { bits[i] = uint64(i) + 6 }
+	bitsArray := container.NewDenseArray(int(hd.BitsBits), bits)
+	hd.Offsets[2] = hd.Offsets[1] + 8 + uint64(len(bitsArray.Data))
+	fmt.Println(len(bitsArray.Data))
+	fmt.Println(hd.Offsets)
+
+	err = writeHeaderBlock(f, &hd)
+	if err != nil { t.Fatalf(err.Error()) }
+
+	err = writeSubCellVecsBlock(f, &hd, vecArray)
+	if err != nil { t.Fatalf(err.Error()) }
+
+	err = writeBitsBlock(f, &hd, bitsArray)
+	if err != nil { t.Fatalf(err.Error()) }
+		
+	f.Seek(0, 0)
+		
+	rdHd, err := readHeaderBlock(f)
+	if err != nil { t.Fatalf(err.Error()) }
+
+	if !lvecHeaderEq(&hd, rdHd) {
+		t.Errorf("written header, %v, not the same as the written header, %v",
+			&hd, rdHd,
+		)
+	}
+
+	rdVecArray, err := readSubCellVecsBlock(f, &hd)
+	if err != nil { t.Fatalf(err.Error()) }
+	
+	if !denseArrayEq(vecArray, rdVecArray) {
+		t.Errorf("Wrote vector array %v, but read vector array %v.",
+			vecArray, rdVecArray)
+	}
+
+	rdBitsArray, err := readBitsBlock(f, &hd)
+	if err != nil { t.Fatalf(err.Error()) }
+
+	if !denseArrayEq(bitsArray, rdBitsArray) {
+		t.Errorf("Wrote vector array %v, but read vector array %v.",
+			bitsArray, rdBitsArray)
 	}
 }

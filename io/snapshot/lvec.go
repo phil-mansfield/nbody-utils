@@ -377,7 +377,7 @@ func writeBitsBlock(
 	err = binary.Write(f, binary.LittleEndian, int32(len(bits.Data)))
 	if err != nil { return err }
 
-	offsetCheck(f, hd.Offsets[1], "bits", "end")
+	offsetCheck(f, hd.Offsets[2], "bits", "end")
 
 	return nil
 }
@@ -389,8 +389,8 @@ func readBitsBlock(
 	offsetCheck(f, hd.Offsets[1], "bits", "start")
 
 	fortran := [2]int32{ }
-	nSub := hd.SubCells*hd.SubCells*hd.SubCells
-	array := createDenseArray(3*nSub, hd.BitsBits)
+	nElem := uint64(hd.Hd.NSide) / (hd.Cells*hd.SubCells)
+	array := createDenseArray(3*nElem*nElem*nElem, hd.BitsBits)
 
 	err := binary.Read(f, binary.LittleEndian, &fortran[0])
 	if err != nil { return nil, err }
@@ -464,9 +464,6 @@ func readArraysBlock(
 
 // fortranCheck ensures that all file blocks are small enough that they can have
 // valid header/footer ints in Fortran. It panics if this is not true.
-//
-// I'm super super happy that I still have to be doing this in
-// the-year-of-our-lord-2019.
 func fortranCheck(offsets [4]uint64) {
 	headerSize := offsets[0] - 8
 	subCellVecsSize := offsets[1] - offsets[0] - 8
@@ -488,6 +485,8 @@ func fortranCheck(offsets [4]uint64) {
 	}
 }
 
+// fortranHeaderCheck panics if the fortran header/footers are different
+// sizes than the block that they enclose.
 func fortranHeaderCheck(fortranHeaders [2]int32, n int, blockName string) {
 	if fortranHeaders[0] != int32(n) || fortranHeaders[1] != int32(n) {
 		panic(fmt.Sprintf("Internal I/O error: bits block has size %d, " + 
@@ -496,6 +495,8 @@ func fortranHeaderCheck(fortranHeaders [2]int32, n int, blockName string) {
 	}
 }
 
+// offsetCheck panics if a block does not start/end at the given offset from
+// the start of the file.
 func offsetCheck(f *os.File, offset uint64, blockName, startEnd string) {
 	if loc, _ := f.Seek(0, 1); uint64(loc) != offset {
 		panic(fmt.Sprintf("Internal I/O error: %s block %sed at byte " + 
@@ -503,6 +504,7 @@ func offsetCheck(f *os.File, offset uint64, blockName, startEnd string) {
 	}
 }
 
+// createDenseArray creates and empty DenseArray.
 func createDenseArray(nElem, bits uint64) *container.DenseArray {
 	n := container.DenseArrayBytes(int(bits), int(nElem))
 	return &container.DenseArray{
