@@ -15,6 +15,10 @@ type DenseArray struct {
 	Data []byte
 }
 
+func DenseArrayBytes(bits, length int) int {
+	return int(math.Ceil(float64(bits * length) / 8))
+}
+
 // Slice converts the contents of a DenseArray into a standard uint64 slice.
 // len(out) must equal arr.Length.
 func (arr *DenseArray) Slice(out []uint64) {
@@ -80,7 +84,7 @@ func NewDenseArray(bits int, x []uint64) *DenseArray {
 	}
 
 	// Set up buffers and commonly used values.
-	nBytes := int(math.Ceil(float64(bits * len(x)) / 8))
+	nBytes := DenseArrayBytes(bits, len(x))
 	arr := &DenseArray{
 		Length: len(x), Bits: byte(bits), Data: make([]byte, nBytes),
 	}
