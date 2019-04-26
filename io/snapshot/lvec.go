@@ -64,6 +64,8 @@ type lvecSnapshot struct {
 	xBuf, vBuf [][3]float32
 	mpBuf []float32
 	idBuf []int64
+
+	quantBuf, subCellBuf []uint64
 }
 
 func getLVecHeader(fname string) (*lvecHeader, error) {
@@ -87,6 +89,7 @@ func NewLVecSnapshot(dir, fnameFormat string) (Snapshot, error) {
 	}
 
 	nElem := uint64(hd.Hd.NSide) / (hd.Cells * hd.SubCells)
+	nSubCell3 := hd.SubCells*hd.SubCells*hd.SubCells
 	nElem3 := nElem*nElem*nElem
 
 	return &lvecSnapshot{ 
@@ -96,6 +99,8 @@ func NewLVecSnapshot(dir, fnameFormat string) (Snapshot, error) {
 		vBuf: make([][3]float32, nElem3),
 		mpBuf: make([]float32, nElem3),
 		idBuf: make([]int64, nElem3),
+		quantBuf: make([]uint64, nElem3),
+		subCellBuf: make([]uint64, nSubCell3),
 	}, nil
 }
 
@@ -150,6 +155,38 @@ func (snap *lvecSnapshot) ReadMp(i int) ([]float32, error) {
 	}
 
 	return snap.mpBuf, nil
+}
+
+func (snap *lvecSnapshot) loadCell(
+	vecs []uint64, arrays []*container.DenseArray, dim uint64,
+) {
+	nSubCell3 := snap.hd.SubCells*snap.hd.SubCells*snap.hd.SubCells
+
+	for i := uint64(0); i < nSubCell3; i++ {
+		snap.loadSubCell(i, vecs[3*i + dim], arrays[3*i + dim])
+	}
+}
+
+func (snap *lvecSnapshot) loadSubCell(
+	i, offset uint64, arr *container.DenseArray,
+) {
+	arr.Slice(snap.subCellBuf)
+
+	sx := i % snap.hd.SubCells
+	sy := (i / snap.hd.SubCells) % snap.hd.SubCells
+	sz := (i / (snap.hd.SubCells*snap.hd.SubCells))
+
+	j := 0
+	for ix := sx; ix < sx + snap.hd.SubCells; ix++ {
+		for iy := sy; iy < sy + snap.hd.SubCells; iy++ {
+			for iz := sz; iz < sz + snap.hd.SubCells; iz++ {
+				k := ix + iy*snap.hd.SubCells +
+					iz*(snap.hd.SubCells*snap.hd.SubCells)
+				snap.quantBuf[k] = snap.subCellBuf[j]
+				j++
+			}
+		}
+	}
 }
 
 func bound(x []uint64) (origin, width uint64) {
