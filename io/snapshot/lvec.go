@@ -262,7 +262,7 @@ func loadArray(
 	array.Slice(buf)
 	for i := range buf {
 		buf[i] += min
-		if buf[i] > pix { buf[i] -= pix }
+		if buf[i] >= pix { buf[i] -= pix }
 	}
 }
 

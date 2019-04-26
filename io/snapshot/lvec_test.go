@@ -260,3 +260,77 @@ func TestPeriodicBound(t *testing.T) {
 		}
 	}
 }
+
+func TestToArray(t *testing.T) {
+	tests := []struct{
+		x []uint64
+		bits, min uint64
+	}{
+		{[]uint64{0}, 1, 0},
+		{[]uint64{9}, 1, 9},
+		{[]uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 4, 0},
+		{[]uint64{0, 1, 2, 3}, 3, 0},
+		{[]uint64{4, 5, 6, 7}, 3, 4},
+		{[]uint64{9, 8, 1, 0}, 4, 0},
+	}
+
+	for i := range tests {
+		x := make([]uint64, len(tests[i].x))
+		for j := range x { x[j] = tests[i].x[j] }
+
+		bits, min, arr := toArray(x, 0, false)
+
+		if bits != tests[i].bits {
+			t.Errorf("test %d) expected bits = %d, got %d",
+				i, tests[i].bits, bits)
+		}
+		if min != tests[i].min {
+			t.Errorf("test %d) expected min = %d, got %d",
+				i, tests[i].min, min)
+		}
+
+		buf := make([]uint64, len(x))
+		loadArray(0, min, arr, buf)
+		if !uint64sEq(buf, tests[i].x) {
+			t.Errorf("test %d) expected x = %d, got %d", i, tests[i].x, buf)
+		}
+	} 
+}
+
+
+func TestPeriodicToArray(t *testing.T) {
+	pix := uint64(10)
+	tests := []struct{
+		x []uint64
+		bits, min uint64
+	}{
+		{[]uint64{0}, 1, 0},
+		{[]uint64{9}, 1, 9},
+		{[]uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 4, 0},
+		{[]uint64{0, 1, 2, 3}, 3, 0},
+		{[]uint64{4, 5, 6, 7}, 3, 4},
+		{[]uint64{9, 8, 1, 0}, 3, 8},
+	}
+
+	for i := range tests {
+		x := make([]uint64, len(tests[i].x))
+		for j := range x { x[j] = tests[i].x[j] }
+
+		bits, min, arr := toArray(x, pix, true)
+
+		if bits != tests[i].bits {
+			t.Errorf("test %d) expected bits = %d, got %d",
+				i, tests[i].bits, bits)
+		}
+		if min != tests[i].min {
+			t.Errorf("test %d) expected min = %d, got %d",
+				i, tests[i].min, min)
+		}
+
+		buf := make([]uint64, len(x))
+		loadArray(pix, min, arr, buf)
+		if !uint64sEq(buf, tests[i].x) {
+			t.Errorf("test %d) expected x = %d, got %d", i, tests[i].x, buf)
+		}
+	} 
+}
