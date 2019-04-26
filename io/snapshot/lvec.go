@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"os"
 	"path"
 	"runtime"
@@ -121,10 +122,32 @@ func (snap *lvecSnapshot) UniformMass() bool {
 	return true
 }
 func (snap *lvecSnapshot) ReadX(i int) ([][3]float32, error) {
-	panic("NYI")
+	hd, vecArray, arrays, err := readLVecFile(snap.xNames[i])
+	if err != nil { return nil, err }
+
+	vecs := make([]uint64, 3 * hd.SubCells*hd.SubCells*hd.SubCells)
+	loadArray(hd.Pix, hd.SubCellVectorsMin, vecArray, vecs)
+
+	for dim := uint64(0); dim < 3; dim++ {
+		snap.loadCell(vecs, arrays, dim)
+		snap.dequantize(snap.xBuf, dim)
+	}
+
+	return snap.xBuf, nil
 }
 func (snap *lvecSnapshot) ReadV(i int) ([][3]float32, error) {
-	panic("NYI")
+	hd, vecArray, arrays, err := readLVecFile(snap.xNames[i])
+	if err != nil { return nil, err }
+
+	vecs := make([]uint64, 3 * hd.SubCells*hd.SubCells*hd.SubCells)
+	loadArray(hd.Pix, hd.SubCellVectorsMin, vecArray, vecs)
+
+	for dim := uint64(0); dim < 3; dim++ {
+		snap.loadCell(vecs, arrays, dim)
+		snap.dequantize(snap.xBuf, dim)
+	}
+
+	return snap.xBuf, nil
 }
 
 func (snap *lvecSnapshot) ReadID(i int) ([]int64, error) {
@@ -170,7 +193,7 @@ func (snap *lvecSnapshot) loadCell(
 func (snap *lvecSnapshot) loadSubCell(
 	i, offset uint64, arr *container.DenseArray,
 ) {
-	arr.Slice(snap.subCellBuf)
+	loadArray(snap.hd.Pix, offset, arr, snap.subCellBuf)
 
 	sx := i % snap.hd.SubCells
 	sy := (i / snap.hd.SubCells) % snap.hd.SubCells
@@ -186,6 +209,14 @@ func (snap *lvecSnapshot) loadSubCell(
 				j++
 			}
 		}
+	}
+}
+
+func (snap *lvecSnapshot) dequantize(out [][3]float32, dim uint64) {
+	delta := (snap.hd.Limits[1] - snap.hd.Limits[0]) / float64(snap.hd.Pix)
+	for i := range snap.quantBuf {
+		x := rand.Float64() + float64(snap.quantBuf[i])
+		out[i][dim] = float32(x*delta + snap.hd.Limits[0])
 	}
 }
 
