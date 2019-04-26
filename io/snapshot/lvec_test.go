@@ -334,3 +334,31 @@ func TestPeriodicToArray(t *testing.T) {
 		}
 	} 
 }
+
+func TestDequantize(t *testing.T) {
+	nElem3 := 100
+
+	snap := &lvecSnapshot{
+		quantBuf: make([]uint64, nElem3),
+		hd: lvecHeader{
+			Pix: 100,
+			Limits: [2]float64{100, 150},
+		},
+	}
+
+	for i := range snap.quantBuf { snap.quantBuf[i] = uint64(i) }
+	out := make([][3]float32, nElem3)
+
+	for dim := uint64(0); dim < 3; dim++ {
+		snap.dequantize(out, dim)
+	}
+
+	for i := range out {
+		for dim := 0; dim < 3; dim++ {		
+			if out[i][dim] < 100 + float32(i)*0.5 ||
+				out[i][dim] > 100 + float32(i+1)*0.5 {
+				t.Fatalf("out[%d][%d] = %g", i, dim, out[i][dim])
+			}
+		}
+	}
+}
