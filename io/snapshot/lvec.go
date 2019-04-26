@@ -3,6 +3,7 @@ package snapshot
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path"
@@ -236,6 +237,19 @@ func toArray(x []uint64, pix uint64, periodic bool) (
 	return bits, min, array
 }
 
+// loadArray loads the contents of array into the buffer buf. If pix is
+// non-zero, the values are treated as periodic within the range pix. min is
+// the offset value for the array.
+func loadArray(
+	pix, min uint64, array *container.DenseArray, buf []uint64,
+) {
+	array.Slice(buf)
+	for i := range buf {
+		buf[i] += min
+		if buf[i] > pix { buf[i] -= pix }
+	}
+}
+
 // writeLVecFile writes an LVec file to disk
 func writeLVecFile(
 	fname string, hd *lvecHeader,
@@ -273,10 +287,7 @@ func writeLVecFile(
 
 // writeHeaderBlock writes the first LVec block, the header.
 func writeHeaderBlock(f *os.File, hd *lvecHeader) error {
-	if loc, _ := f.Seek(0, 1); uint64(loc) != 0 {
-		panic(fmt.Sprintf("Internal I/O error: header block started at byte " + 
-			"%d, not byte %d.", loc, 0))
-	}
+	offsetCheck(f, 0, "header", "start")
 
 	err := binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
 	if err != nil { return err }
@@ -285,12 +296,29 @@ func writeHeaderBlock(f *os.File, hd *lvecHeader) error {
 	err = binary.Write(f, binary.LittleEndian, uint64(unsafe.Sizeof(*hd)))
 	if err != nil { return err }
 
-	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[0] {
-		panic(fmt.Sprintf("Internal I/O error: header block ended at byte " + 
-			"%d, not byte %d.", loc, hd.offsets[0]))
-	}
+	offsetCheck(f, hd.offsets[0], "header", "end")
 
 	return nil
+}
+
+// readHeaderBlock reads the first LVec bloc, the header.
+func readHeaderBlock(f *os.File) (*lvecHeader, error) {
+	offsetCheck(f, 0, "header", "start")
+
+	fortran := [2]int32{ }
+	hd := &lvecHeader{ }
+
+	err := binary.Read(f, binary.LittleEndian, &fortran[0])
+	if err != nil { return nil, err }
+	err = binary.Read(f, binary.LittleEndian, hd)
+	if err != nil { return nil, err }
+	err = binary.Read(f, binary.LittleEndian, &fortran[1])
+	if err != nil { return nil, err }
+
+	fortranHeaderCheck(fortran, int(unsafe.Sizeof(*hd)), "header")
+	offsetCheck(f, hd.offsets[0], "header", "end")
+
+	return hd, nil
 }
 
 // writeHeaderBlock writes the second LVec block, the quantized vectors to every
@@ -298,48 +326,80 @@ func writeHeaderBlock(f *os.File, hd *lvecHeader) error {
 func writeSubCellVecsBlock(
 	f *os.File, hd *lvecHeader, subCellVecs *container.DenseArray,
 ) error {
-	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[0] {
-		panic(fmt.Sprintf("Internal I/O error: vector block started at byte " + 
-			"%d, not byte %d.", loc, hd.offsets[0]))
-	}
-
+	offsetCheck(f, hd.offsets[0], "vector", "start")
+	
 	err := binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
 	if err != nil { return err }
-	err = binary.Write(f, binary.LittleEndian, subCellVecs.Data)
+	_, err = f.Write(subCellVecs.Data)
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, uint64(len(subCellVecs.Data)))
 	if err != nil { return err }
 
-	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[1] {
-		panic(fmt.Sprintf("Internal I/O error: vector block ended at byte " + 
-			"%d, not byte %d.", loc, hd.offsets[1]))
-	}
+	offsetCheck(f, hd.offsets[1], "vector", "end")
 
 	return nil
+}
+
+// readSubCellVecsBlock reads the second LVec bloc, the vector block.
+func readSubCellVecsBlock(
+	f *os.File, hd *lvecHeader,
+) (*container.DenseArray, error) {
+	offsetCheck(f, hd.offsets[0], "vector", "start")
+
+	fortran := [2]int32{ }
+	array := createDenseArray(hd.subCells, hd.subCellVectorsBits)
+
+	err := binary.Read(f, binary.LittleEndian, &fortran[0])
+	if err != nil { return nil, err }
+	_, err = io.ReadFull(f, array.Data)
+	if err != nil { return nil, err }
+	err = binary.Read(f, binary.LittleEndian, &fortran[1])
+	if err != nil { return nil, err }
+
+	fortranHeaderCheck(fortran, len(array.Data), "vector")
+	offsetCheck(f, hd.offsets[1], "vector", "end")
+
+	return array, nil
 }
 
 // writeBitsBlock writes the third LVec block, the number of bits in each array.
 func writeBitsBlock(
 	f *os.File, hd *lvecHeader, bits *container.DenseArray,
 ) error {
-	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[1] {
-		panic(fmt.Sprintf("Internal I/O error: vector block started at byte " + 
-			"%d, not byte %d.", loc, hd.offsets[1]))
-	}
+	offsetCheck(f, hd.offsets[1], "bits", "start")
 
 	err := binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
 	if err != nil { return err }
-	err = binary.Write(f, binary.LittleEndian, bits.Data)
+	_, err = f.Write(bits.Data)
 	if err != nil { return err }
 	err = binary.Write(f, binary.LittleEndian, uint64(len(bits.Data)))
 	if err != nil { return err }
 
-	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[2] {
-		panic(fmt.Sprintf("Internal I/O error: vector block ended at byte " + 
-			"%d, not byte %d.", loc, hd.offsets[2]))
-	}
+	offsetCheck(f, hd.offsets[1], "bits", "end")
 
 	return nil
+}
+
+// readBitsBlock reads the third LVec bloc, the bits block.
+func readBitsBlock(
+	f *os.File, hd *lvecHeader,
+) (*container.DenseArray, error) {
+	offsetCheck(f, hd.offsets[1], "bits", "start")
+
+	fortran := [2]int32{ }
+	array := createDenseArray(hd.subCells, hd.bitsBits)
+
+	err := binary.Read(f, binary.LittleEndian, &fortran[0])
+	if err != nil { return nil, err }
+	_, err = io.ReadFull(f, array.Data)
+	if err != nil { return nil, err }
+	err = binary.Read(f, binary.LittleEndian, &fortran[1])
+	if err != nil { return nil, err }
+
+	fortranHeaderCheck(fortran, len(array.Data), "bits")
+	offsetCheck(f, hd.offsets[2], "bits", "end")
+
+	return array, nil
 }
 
 // writeArraysBlock writes the fourth and final LVec block, the array data for
@@ -347,6 +407,8 @@ func writeBitsBlock(
 func writeArraysBlock(
 	f *os.File, hd *lvecHeader, arrays []*container.DenseArray,
 ) error {
+	offsetCheck(f, hd.offsets[2], "array", "start")
+
 	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[1] {
 		panic(fmt.Sprintf("Internal I/O error: vector block started at byte " + 
 			"%d, not byte %d.", loc, hd.offsets[1]))
@@ -358,20 +420,22 @@ func writeArraysBlock(
 	err := binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
 	if err != nil { return err }
 	for _, array := range arrays {
-		err = binary.Write(f, binary.LittleEndian, array.Data)
+		_, err = f.Write(array.Data)
 		if err != nil { return err }
 	}
 	err = binary.Write(f, binary.LittleEndian, uint64(totalArrayData))
 	if err != nil { return err }
 
-	if loc, _ := f.Seek(0, 1); uint64(loc) != hd.offsets[3] {
-		panic(fmt.Sprintf("Internal I/O error: vector block ended at byte " + 
-			"%d, not byte %d.", loc, hd.offsets[3]))
-	}
+	offsetCheck(f, hd.offsets[3], "array", "end")
 
 	return nil
 }
 
+func readArraysBlock(
+	f *os.File, hd *lvecHeader,
+) (*container.DenseArray, error) {
+	panic("NYI")
+}
 
 // fortranCheck ensures that all file blocks are small enough that they can have
 // valid header/footer ints in Fortran. It panics if this is not true.
@@ -396,6 +460,29 @@ func fortranCheck(offsets [4]uint64) {
 	} else if dataSize > math.MaxInt32 {
 		panic(fmt.Sprintf("Internal failure: data block has size %d " + 
 			"and will be too big to read by Fortran codes.", dataSize))
+	}
+}
+
+func fortranHeaderCheck(fortranHeaders [2]int32, n int, blockName string) {
+	if fortranHeaders[0] != int32(n) || fortranHeaders[1] != int32(n) {
+		panic(fmt.Sprintf("Internal I/O error: bits block has size %d, " + 
+			"but the fortran header and footer are (%d, %d)",
+			n, fortranHeaders[0], fortranHeaders[1]))
+	}
+}
+
+func offsetCheck(f *os.File, offset uint64, blockName, startEnd string) {
+	if loc, _ := f.Seek(0, 1); uint64(loc) != offset {
+		panic(fmt.Sprintf("Internal I/O error: %s block %sed at byte " + 
+			"%d, not byte %d.", blockName, startEnd, loc, offset))
+	}
+}
+
+func createDenseArray(subCells, bits uint64) *container.DenseArray {
+	nCells := int(subCells * subCells * subCells)
+	n := container.DenseArrayBytes(nCells, int(bits))
+	return &container.DenseArray{
+		Length: nCells, Bits: byte(bits), Data: make([]byte, n),
 	}
 }
 
