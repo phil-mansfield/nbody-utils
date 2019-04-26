@@ -57,6 +57,100 @@ type lvecHeader struct {
 	Hd Header // The header for the simulation.
 }
 
+type lvecSnapshot struct {
+	hd lvecHeader
+	xNames, vNames []string
+
+	xBuf, vBuf [][3]float32
+	mpBuf []float32
+	idBuf []int64
+}
+
+func getLVecHeader(fname string) (*lvecHeader, error) {
+	f, err := os.Open(fname)
+	defer f.Close()
+	if err != nil { return nil, err }
+	return readHeaderBlock(f)
+}
+
+func NewLVecSnapshot(dir, fnameFormat string) (Snapshot, error) {
+	fnames, err := getFilenames(dir)
+	if err != nil { return nil, err }
+	hd, err := getLVecHeader(fnames[0])
+	if err != nil { return nil, err }
+
+	nFiles := len(fnames) / 2
+	xNames, vNames := make([]string, nFiles), make([]string, nFiles)
+	for i := range xNames {
+		xNames[i] = fmt.Sprintf(fnameFormat, "X", i)
+		vNames[i] = fmt.Sprintf(fnameFormat, "V", i)
+	}
+
+	nElem := uint64(hd.Hd.NSide) / (hd.Cells * hd.SubCells)
+	nElem3 := nElem*nElem*nElem
+
+	return &lvecSnapshot{ 
+		hd: *hd,
+		xNames: xNames, vNames: vNames,
+		xBuf: make([][3]float32, nElem3),
+		vBuf: make([][3]float32, nElem3),
+		mpBuf: make([]float32, nElem3),
+		idBuf: make([]int64, nElem3),
+	}, nil
+}
+
+func (snap *lvecSnapshot) Files() int {
+	nCell := snap.hd.Cells
+	return int(nCell*nCell*nCell)
+}
+func (snap *lvecSnapshot) Header() *Header {
+	return &snap.hd.Hd
+}
+func (snap *lvecSnapshot) UpdateHeader(hd *Header) {
+	snap.hd.Hd = *hd
+}
+func (snap *lvecSnapshot) Index() *Index  {
+	panic("NYI")
+}
+func (snap *lvecSnapshot) UniformMass() bool {
+	return true
+}
+func (snap *lvecSnapshot) ReadX(i int) ([][3]float32, error) {
+	panic("NYI")
+}
+func (snap *lvecSnapshot) ReadV(i int) ([][3]float32, error) {
+	panic("NYI")
+}
+
+func (snap *lvecSnapshot) ReadID(i int) ([]int64, error) {
+	hd, err := getLVecHeader(snap.xNames[i])
+	if err != nil { return nil, err }
+
+	nElem := uint64(hd.Hd.NSide) / (hd.Cells * hd.SubCells)
+	cx := nElem * (hd.Idx % hd.Cells)
+	cy := nElem * ((hd.Idx / hd.Cells)% hd.Cells)
+	cz := nElem * (hd.Idx / (hd.Cells * hd.Cells))
+
+	for ix := cx; ix < cx + nElem; ix++ {
+		for iy := cy; iy < cy + nElem; iy++ {
+			for iz := cz; iz < cz + nElem; iz++ {
+				snap.idBuf[i] = int64(
+					ix + iy*uint64(hd.Hd.NSide) +
+						iz*uint64(hd.Hd.NSide*hd.Hd.NSide))
+			}
+		}
+	}
+
+	return snap.idBuf, nil
+}
+
+func (snap *lvecSnapshot) ReadMp(i int) ([]float32, error) {
+	for j := range snap.mpBuf {
+		snap.mpBuf[j] = float32(snap.hd.Hd.UniformMp)
+	}
+
+	return snap.mpBuf, nil
+}
 
 func bound(x []uint64) (origin, width uint64) {
 	min, max := x[0], x[0]
@@ -299,6 +393,32 @@ func writeLVecFile(
 	if err != nil { return err }
 
 	return nil
+}
+
+func readLVecFile(fname string) (
+	hd *lvecHeader, subCellVecs *container.DenseArray,
+	arrays []*container.DenseArray, err error,
+) {
+	f, err := os.Open(fname)
+	defer f.Close()
+	if err != nil { return nil, nil, nil, err }
+
+	hd, err = readHeaderBlock(f)
+	if err != nil { return nil, nil, nil, err }
+
+	subCellVecs, err = readSubCellVecsBlock(f, hd)
+	if err != nil { return nil, nil, nil, err }
+
+	bitsArray, err := readBitsBlock(f, hd)
+	if err != nil { return nil, nil, nil, err }
+	
+	bits := make([]uint64, bitsArray.Length)
+	bitsArray.Slice(bits)
+
+	arrays, err = readArraysBlock(f, hd, bits)
+	if err != nil { return nil, nil, nil, err }
+
+	return hd, subCellVecs, arrays, nil
 }
 
 // writeHeaderBlock writes the first LVec block, the header.
