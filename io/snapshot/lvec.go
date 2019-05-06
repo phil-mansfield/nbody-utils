@@ -126,9 +126,15 @@ func (snap *lvecSnapshot) UpdateHeader(hd *Header) {
 	snap.hd.Hd = *hd
 }
 
+// UniformMass returns true if all particles have the same mass and false
+// otherwise.
 func (snap *lvecSnapshot) UniformMass() bool {
 	return true
 }
+
+// ReadX returns the position vectors associated with the file at index i. The
+// returned array is an internal buffer, so don't append to it or assume it will
+// stick around after the next call to ReadX.
 func (snap *lvecSnapshot) ReadX(i int) ([][3]float32, error) {
 	hd, vecArray, arrays, err := readLVecFile(snap.xNames[i])
 	if err != nil { return nil, err }
@@ -143,6 +149,10 @@ func (snap *lvecSnapshot) ReadX(i int) ([][3]float32, error) {
 
 	return snap.xBuf, nil
 }
+
+// ReadV returns the velocity vectors associated with the file at index i. The
+// returned array is an internal buffer, so don't append to it or assume it will
+// stick around after the next call to ReadV.
 func (snap *lvecSnapshot) ReadV(i int) ([][3]float32, error) {
 	hd, vecArray, arrays, err := readLVecFile(snap.xNames[i])
 	if err != nil { return nil, err }
@@ -158,6 +168,9 @@ func (snap *lvecSnapshot) ReadV(i int) ([][3]float32, error) {
 	return snap.xBuf, nil
 }
 
+// ReadV returns the IDs associated with the file at index i. The returned
+// array is an internal buffer, so don't append to it or assume it will stick
+// around after the next call to ReadV.
 func (snap *lvecSnapshot) ReadID(i int) ([]int64, error) {
 	hd, err := getLVecHeader(snap.xNames[i])
 	if err != nil { return nil, err }
@@ -180,6 +193,9 @@ func (snap *lvecSnapshot) ReadID(i int) ([]int64, error) {
 	return snap.idBuf, nil
 }
 
+// ReadMp returns the particle masses associated with the file at index i. The
+// returned array is an internal buffer, so don't append to it or assume it will
+// stick around after the next call to ReadV.
 func (snap *lvecSnapshot) ReadMp(i int) ([]float32, error) {
 	for j := range snap.mpBuf {
 		snap.mpBuf[j] = float32(snap.hd.Hd.UniformMp)
@@ -188,6 +204,8 @@ func (snap *lvecSnapshot) ReadMp(i int) ([]float32, error) {
 	return snap.mpBuf, nil
 }
 
+// loadCell loads the subcell data from arrays corresponding to offsets given by
+// vecs at the dimension dim into the quantBuf.
 func (snap *lvecSnapshot) loadCell(
 	vecs []uint64, arrays []*container.DenseArray, dim uint64,
 ) {
@@ -198,6 +216,8 @@ func (snap *lvecSnapshot) loadCell(
 	}
 }
 
+// loadSubCell loads the subcell i from the data within arr with the given
+// offset into the quantBuf.
 func (snap *lvecSnapshot) loadSubCell(
 	i, offset uint64, arr *container.DenseArray,
 ) {
@@ -220,6 +240,7 @@ func (snap *lvecSnapshot) loadSubCell(
 	}
 }
 
+// dequantize dequantizes the quantBuf into the buffer out at dimension dim.
 func (snap *lvecSnapshot) dequantize(out [][3]float32, dim uint64) {
 	delta := (snap.hd.Limits[1] - snap.hd.Limits[0]) / float64(snap.hd.Pix)
 	for i := range snap.quantBuf {
@@ -244,7 +265,7 @@ func unbound(origin uint64, x []uint64) {
 	for i := range x { x[i] += origin }
 }
 
-// PeriodicBound returns the periodic bounds on the data contained in the array
+// periodicBound returns the periodic bounds on the data contained in the array
 // x with a total width of pix. pix must be less than MaxInt64
 func periodicBound(pix uint64, x []uint64) (origin, width uint64) {	
 	if pix > math.MaxInt64 {
