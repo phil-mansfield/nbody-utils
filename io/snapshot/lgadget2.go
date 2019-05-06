@@ -152,10 +152,6 @@ func (snap *lGadget2Snapshot) UpdateHeader(hd *Header) {
 	snap.hd = *hd
 }
 
-func (snap *lGadget2Snapshot) Index() *Index {
-	panic("NYI")
-}
-
 func (snap *lGadget2Snapshot) ReadX(idx int) ([][3]float32, error) {
 	f, err := os.Open(snap.filenames[idx])
 	if err != nil { return nil, err }

@@ -69,6 +69,7 @@ type lvecSnapshot struct {
 	quantBuf, subCellBuf []uint64
 }
 
+// getLVecHeader returns the header of a .lvec file.
 func getLVecHeader(fname string) (*lvecHeader, error) {
 	f, err := os.Open(fname)
 	defer f.Close()
@@ -76,6 +77,9 @@ func getLVecHeader(fname string) (*lvecHeader, error) {
 	return readHeaderBlock(f)
 }
 
+// NewLVecSnapshot returns a Snapshot corresponding to the files in dir which
+// can be created with the format string, fnameFormat. The format string should
+// contain one string verb and one int verb (e.g. "Bolshoi.%s.%03d.lvec")
 func NewLVecSnapshot(dir, fnameFormat string) (Snapshot, error) {
 	fnames, err := getFilenames(dir)
 	if err != nil { return nil, err }
@@ -105,19 +109,23 @@ func NewLVecSnapshot(dir, fnameFormat string) (Snapshot, error) {
 	}, nil
 }
 
+// Files returns the number of files in the snapshot.
 func (snap *lvecSnapshot) Files() int {
 	nCell := snap.hd.Cells
 	return int(nCell*nCell*nCell)
 }
+
+// Header returns the header for the snapshot.
 func (snap *lvecSnapshot) Header() *Header {
 	return &snap.hd.Hd
 }
+
+// UpdateHeader replaces the snapshot's header with new values. This does not
+// change the value on disk.
 func (snap *lvecSnapshot) UpdateHeader(hd *Header) {
 	snap.hd.Hd = *hd
 }
-func (snap *lvecSnapshot) Index() *Index  {
-	panic("NYI")
-}
+
 func (snap *lvecSnapshot) UniformMass() bool {
 	return true
 }
