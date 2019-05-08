@@ -80,7 +80,7 @@ func getLVecHeader(fname string) (*lvecHeader, error) {
 // NewLVecSnapshot returns a Snapshot corresponding to the files in dir which
 // can be created with the format string, fnameFormat. The format string should
 // contain one string verb and one int verb (e.g. "Bolshoi.%s.%03d.lvec")
-func NewLVecSnapshot(dir, fnameFormat string) (Snapshot, error) {
+func LVec(dir, fnameFormat string) (Snapshot, error) {
 	fnames, err := getFilenames(dir)
 	if err != nil { return nil, err }
 	hd, err := getLVecHeader(fnames[0])
@@ -89,23 +89,24 @@ func NewLVecSnapshot(dir, fnameFormat string) (Snapshot, error) {
 	nFiles := len(fnames) / 2
 	xNames, vNames := make([]string, nFiles), make([]string, nFiles)
 	for i := range xNames {
-		xNames[i] = fmt.Sprintf(fnameFormat, "X", i)
-		vNames[i] = fmt.Sprintf(fnameFormat, "V", i)
+		xNames[i] = path.Join(dir, fmt.Sprintf(fnameFormat, "X", i))
+		vNames[i] = path.Join(dir, fmt.Sprintf(fnameFormat, "V", i))
 	}
-
+	
+	nCellSide := uint64(hd.Hd.NSide) / hd.Cells
 	nElem := uint64(hd.Hd.NSide) / (hd.Cells * hd.SubCells)
-	nSubCell3 := hd.SubCells*hd.SubCells*hd.SubCells
 	nElem3 := nElem*nElem*nElem
+	nCellSide3 := nCellSide*nCellSide*nCellSide
 
 	return &lvecSnapshot{ 
 		hd: *hd,
 		xNames: xNames, vNames: vNames,
-		xBuf: make([][3]float32, nElem3),
-		vBuf: make([][3]float32, nElem3),
-		mpBuf: make([]float32, nElem3),
-		idBuf: make([]int64, nElem3),
-		quantBuf: make([]uint64, nElem3),
-		subCellBuf: make([]uint64, nSubCell3),
+		xBuf: make([][3]float32, nCellSide3),
+		vBuf: make([][3]float32, nCellSide3),
+		mpBuf: make([]float32, nCellSide3),
+		idBuf: make([]int64, nCellSide3),
+		quantBuf: make([]uint64, nCellSide3),
+		subCellBuf: make([]uint64, nElem3),
 	}, nil
 }
 
@@ -138,6 +139,7 @@ func (snap *lvecSnapshot) UniformMass() bool {
 func (snap *lvecSnapshot) ReadX(i int) ([][3]float32, error) {
 	hd, vecArray, arrays, err := readLVecFile(snap.xNames[i])
 	if err != nil { return nil, err }
+	snap.hd = *hd
 
 	vecs := make([]uint64, 3 * hd.SubCells*hd.SubCells*hd.SubCells)
 	loadArray(hd.Pix, hd.SubCellVectorsMin, vecArray, vecs)
@@ -154,8 +156,9 @@ func (snap *lvecSnapshot) ReadX(i int) ([][3]float32, error) {
 // returned array is an internal buffer, so don't append to it or assume it will
 // stick around after the next call to ReadV.
 func (snap *lvecSnapshot) ReadV(i int) ([][3]float32, error) {
-	hd, vecArray, arrays, err := readLVecFile(snap.xNames[i])
+	hd, vecArray, arrays, err := readLVecFile(snap.vNames[i])
 	if err != nil { return nil, err }
+	snap.hd = *hd
 
 	vecs := make([]uint64, 3 * hd.SubCells*hd.SubCells*hd.SubCells)
 	loadArray(hd.Pix, hd.SubCellVectorsMin, vecArray, vecs)
@@ -180,12 +183,14 @@ func (snap *lvecSnapshot) ReadID(i int) ([]int64, error) {
 	cy := nElem * ((hd.Idx / hd.Cells)% hd.Cells)
 	cz := nElem * (hd.Idx / (hd.Cells * hd.Cells))
 
-	for ix := cx; ix < cx + nElem; ix++ {
+	j := 0
+	for iz := cx; iz < cz + nElem; iz++ {
 		for iy := cy; iy < cy + nElem; iy++ {
-			for iz := cz; iz < cz + nElem; iz++ {
-				snap.idBuf[i] = int64(
+			for ix := cz; ix < cx + nElem; ix++ {
+				snap.idBuf[j] = int64(
 					ix + iy*uint64(hd.Hd.NSide) +
 						iz*uint64(hd.Hd.NSide*hd.Hd.NSide))
+				j++
 			}
 		}
 	}
@@ -340,7 +345,7 @@ func ConvertToLVec(
 ) error {
 	hd := snap.Header()
 
-	if int64(cells*subCells) != hd.NSide {
+	if hd.NSide % int64(cells*subCells) != 0 {
 		panic(fmt.Sprintf("cells = %d, subCells = %d, but hd.NSide = %d",
 			cells, subCells, hd.NSide))
 	} else if !snap.UniformMass() {
@@ -416,7 +421,7 @@ func generateLVec(
 			bits, 0, false,
 		)
 		hd.SubCellVectorsBits, hd.SubCellVectorsMin, subCellVecsArray = toArray(
-			bits, 0, false,
+			subCellVecs, 0, false,
 		)
 
 		err := writeLVecFile(fnames[c], hd, subCellVecsArray, bitsArray, arrays)
@@ -441,7 +446,7 @@ func toArray(x []uint64, pix uint64, periodic bool) (
 
 	bits = minBits(width)
 	array = container.NewDenseArray(int(bits), x)
-
+	
 	return bits, min, array
 }
 
@@ -484,7 +489,7 @@ func writeLVecFile(
 	err = writeSubCellVecsBlock(f, hd, subCellVecs)
 	if err != nil { return err }
 
-	err = writeBitsBlock(f, hd, subCellVecs)
+	err = writeBitsBlock(f, hd, bits)
 	if err != nil { return err }
 
 	err = writeArraysBlock(f, hd, arrays)
@@ -509,13 +514,11 @@ func readLVecFile(fname string) (
 
 	bitsArray, err := readBitsBlock(f, hd)
 	if err != nil { return nil, nil, nil, err }
-	
 	bits := make([]uint64, bitsArray.Length)
-	bitsArray.Slice(bits)
+	loadArray(0, hd.BitsMin, bitsArray, bits)
 
 	arrays, err = readArraysBlock(f, hd, bits)
 	if err != nil { return nil, nil, nil, err }
-
 	return hd, subCellVecs, arrays, nil
 }
 
@@ -675,8 +678,9 @@ func readArraysBlock(
 	nCells := int(hd.SubCells*hd.SubCells*hd.SubCells)
 	arrays := make([]*container.DenseArray, 3*nCells)
 	nSubCellSide := uint64(hd.Hd.NSide) / (hd.Cells*hd.SubCells)
+	nSubCellSide3 := nSubCellSide*nSubCellSide*nSubCellSide
 	for i := 0; i < 3*nCells; i++ {
-		arrays[i] = createDenseArray(nSubCellSide, bits[i])
+		arrays[i] = createDenseArray(nSubCellSide3, bits[i])
 		_, err = io.ReadFull(f, arrays[i].Data)
 		if err != nil { return nil, err }
 	}
@@ -720,9 +724,9 @@ func fortranCheck(offsets [4]uint64) {
 // sizes than the block that they enclose.
 func fortranHeaderCheck(fortranHeaders [2]int32, n int, blockName string) {
 	if fortranHeaders[0] != int32(n) || fortranHeaders[1] != int32(n) {
-		panic(fmt.Sprintf("Internal I/O error: bits block has size %d, " + 
+		panic(fmt.Sprintf("Internal I/O error: %s block has size %d, " + 
 			"but the fortran header and footer are (%d, %d)",
-			n, fortranHeaders[0], fortranHeaders[1]))
+			blockName, n, fortranHeaders[0], fortranHeaders[1]))
 	}
 }
 

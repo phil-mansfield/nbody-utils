@@ -135,6 +135,7 @@ func XGrid(snap Snapshot, cells int) (*VectorGrid, error) {
 		if err != nil { return nil, err }
 		id, err := snap.ReadID(i)
 		if err != nil { return nil, err }
+
 		for j := range x { grid.Insert(id[j] - 1, x[j]) }
 	}
 
