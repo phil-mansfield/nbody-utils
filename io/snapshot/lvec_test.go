@@ -435,7 +435,7 @@ func TestMockLVec(t *testing.T) {
 
 	snap := NewMockSnapshot(hd, x, v, id)
 
-	ConvertToLVec(snap, 1, 1, 0.1, 0.01, "test_data", "test.%s.%d.lvec")
+	ConvertToLVec(snap, 1, 2, 0.1, 0.01, "test_data", "test.%s.%d.lvec")
 	lvec, err := LVec("test_data", "test.%s.%d.lvec")
 	if err != nil { panic(err.Error()) }
 

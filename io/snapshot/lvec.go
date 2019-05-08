@@ -178,7 +178,7 @@ func (snap *lvecSnapshot) ReadID(i int) ([]int64, error) {
 	hd, err := getLVecHeader(snap.xNames[i])
 	if err != nil { return nil, err }
 
-	nElem := uint64(hd.Hd.NSide) / (hd.Cells * hd.SubCells)
+	nElem := uint64(hd.Hd.NSide) / hd.Cells
 	cx := nElem * (hd.Idx % hd.Cells)
 	cy := nElem * ((hd.Idx / hd.Cells)% hd.Cells)
 	cz := nElem * (hd.Idx / (hd.Cells * hd.Cells))
