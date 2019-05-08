@@ -222,17 +222,18 @@ func (snap *lvecSnapshot) loadSubCell(
 	i, offset uint64, arr *container.DenseArray,
 ) {
 	loadArray(snap.hd.Pix, offset, arr, snap.subCellBuf)
+	nCellElem := uint64(snap.hd.Hd.NSide) / (snap.hd.Cells)
+	nElem := uint64(snap.hd.Hd.NSide) / (snap.hd.Cells*snap.hd.SubCells)
 
-	sx := i % snap.hd.SubCells
-	sy := (i / snap.hd.SubCells) % snap.hd.SubCells
-	sz := (i / (snap.hd.SubCells*snap.hd.SubCells))
+	sx := i % snap.hd.SubCells * nElem
+	sy := (i / snap.hd.SubCells) % snap.hd.SubCells * nElem
+	sz := (i / (snap.hd.SubCells*snap.hd.SubCells)) * nElem
 
 	j := 0
-	for ix := sx; ix < sx + snap.hd.SubCells; ix++ {
-		for iy := sy; iy < sy + snap.hd.SubCells; iy++ {
-			for iz := sz; iz < sz + snap.hd.SubCells; iz++ {
-				k := ix + iy*snap.hd.SubCells +
-					iz*(snap.hd.SubCells*snap.hd.SubCells)
+	for iz := sz; iz < sz + nElem; iz++ {
+		for iy := sy; iy < sy + nElem; iy++ {
+			for ix := sx; ix < sx + nElem; ix++ {
+				k := ix + iy*nCellElem + iz*(nCellElem*nCellElem)
 				snap.quantBuf[k] = snap.subCellBuf[j]
 				j++
 			}

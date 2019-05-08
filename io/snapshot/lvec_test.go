@@ -362,3 +362,47 @@ func TestDequantize(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadCell(t *testing.T) {
+	snap := &lvecSnapshot{ }
+	snap.hd.Pix = 125 * 8
+	snap.hd.Cells = 3
+	snap.hd.Hd.NSide = 30
+	snap.hd.SubCells = 2
+	snap.subCellBuf = make([]uint64, 125)
+	snap.quantBuf = make([]uint64, 1000)
+	
+	arrs := make([]*container.DenseArray, 8)
+	bits, mins := make([]uint64, 8), make([]uint64, 8)
+
+	for i := range arrs {
+		xoff := 5 * (i % 2)
+		yoff := 5 * ((i / 2) % 2)
+		zoff := 5 * (i / 4)
+
+		j := 0
+		x := make([]uint64, 125)
+		for iz := zoff; iz < zoff + 5; iz++ {
+			for iy := yoff; iy < yoff + 5; iy++ {
+				for ix := xoff; ix < xoff + 5; ix++ {
+					x[j] = uint64(ix + iy*10 + iz*100)
+					j++
+				}
+			}
+		}
+
+		bits[i], mins[i], arrs[i] = toArray(x, snap.hd.Pix, false)
+	}
+
+	for i := 0; i < 8; i++ {
+		snap.loadSubCell(uint64(i), mins[i], arrs[i])
+	}
+
+
+	for i := range snap.quantBuf { 
+		if snap.quantBuf[i] != uint64(i) {
+			t.Errorf("snap.quantBuf[%d] = %d", i, snap.quantBuf[i])
+		}
+	}
+}
+
