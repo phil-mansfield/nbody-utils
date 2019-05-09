@@ -1,13 +1,17 @@
 package snapshot
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path"
-	"math"
+	"runtime"
+
+	"unsafe"
 )
 
 type lGadget2Snapshot struct {
@@ -135,10 +139,17 @@ func intCubeRoot(n int64) int64 {
 func readInt32(r io.Reader, order binary.ByteOrder) int32 {
 	var n int32
 	if err := binary.Read(r, order, &n); err != nil {
-		panic(err)
+		panic(err.Error())
 	}
 	return n
 }
+
+func writeInt32(w io.Writer, order binary.ByteOrder, x int32) {
+	if err := binary.Write(w, order, x); err != nil{
+		panic(err.Error())
+	}
+}
+
 
 func (snap *lGadget2Snapshot) Files() int {
 	return len(snap.filenames)
@@ -342,4 +353,78 @@ func expandInts(ints []int64, n int) []int64 {
 	default:
 		return make([]int64, n)
 	}
+}
+ 
+func BytesToLGadget2Header(b []byte) *lGadget2Header {
+	if len(b) != int(unsafe.Sizeof(lGadget2Header{})) {
+		panic(fmt.Sprintf("length of buffer = %d, but Sizeof(lGadget2Header)"+
+			" = %d",len(b), unsafe.Sizeof(lGadget2Header{})))
+	}
+
+	hd := &lGadget2Header{ }
+	binary.Read(bytes.NewBuffer(b), binary.LittleEndian, hd)
+	return hd
+}
+
+func WriteLGadget2(
+	dir, fnameFmt string, snap Snapshot, hd *lGadget2Header,
+) error {
+
+	rootA := float32(math.Sqrt(float64(hd.Time)))
+
+	for i := 0; i < snap.Files(); i++ {
+		f, err := os.Create(path.Join(dir, fmt.Sprintf(fnameFmt, i)))
+		if err != nil { return err }
+
+		runtime.GC()
+
+		x, err := snap.ReadX(i)
+		if err != nil { panic(err.Error()) }
+		hd.NPart[1] = uint32(len(x))
+
+		headerSize := int32(unsafe.Sizeof(*hd))
+		writeInt32(f, binary.LittleEndian, headerSize)
+		err = binary.Write(f, binary.LittleEndian, hd)
+		if err != nil { panic(err.Error()) }
+		writeInt32(f, binary.LittleEndian, headerSize)
+
+		xSize := int32(12 * len(x))
+		writeInt32(f, binary.LittleEndian, xSize)
+		err = binary.Write(f, binary.LittleEndian, x)
+		if err != nil { panic(err.Error()) }
+		writeInt32(f, binary.LittleEndian, xSize)
+
+		runtime.GC()
+
+		v, err := snap.ReadV(i)
+		if err != nil { panic(err.Error()) }
+
+		for i := range v {
+			for j := 0; j < 3; j++ { v[i][j] /= rootA }
+		}
+
+		writeInt32(f, binary.LittleEndian, xSize)
+		err = binary.Write(f, binary.LittleEndian, v)
+		if err != nil { panic(err.Error()) }
+		writeInt32(f, binary.LittleEndian, xSize)
+
+		for i := range v {
+			for j := 0; j < 3; j++ { v[i][j] *= rootA }
+		}
+
+		runtime.GC()
+
+		id, err := snap.ReadID(i)
+		if err != nil { panic(err.Error()) }
+
+		idSize := int32(8*len(id))
+		writeInt32(f, binary.LittleEndian, idSize)
+		err = binary.Write(f, binary.LittleEndian, id)		
+		if err != nil { panic(err.Error()) }
+		writeInt32(f, binary.LittleEndian, idSize)
+
+		f.Close()
+	}
+
+	return nil
 }
