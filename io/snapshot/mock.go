@@ -27,6 +27,9 @@ func (snap *mockSnapshot) Files() int {
 func (snap *mockSnapshot) Header() *Header {
 	return snap.hd
 }
+func (snap *mockSnapshot) RawHeader(i int) []byte {
+	return []byte{99}
+}
 func (snap *mockSnapshot) UpdateHeader(hd *Header) {
 	snap.hd = hd
 }

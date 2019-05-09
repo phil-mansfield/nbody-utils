@@ -159,6 +159,21 @@ func (snap *lGadget2Snapshot) Header() *Header {
 	return &snap.hd
 }
 
+func (snap *lGadget2Snapshot) RawHeader(idx int) []byte {
+	f, err := os.Open(snap.filenames[idx])
+	if err != nil { panic(err.Error()) }
+	defer f.Close()
+
+	order := snap.context.Order
+
+	// Read header
+	_ = readInt32(f, order)
+	buf := make([]byte, unsafe.Sizeof(lGadget2Header{}))
+	err = binary.Read(f, order, buf)
+
+	return buf
+}
+
 func (snap *lGadget2Snapshot) UpdateHeader(hd *Header) {
 	snap.hd = *hd
 }
@@ -380,6 +395,7 @@ func WriteLGadget2(
 
 		x, err := snap.ReadX(i)
 		if err != nil { panic(err.Error()) }
+		hd.NPart = [6]uint32{ }
 		hd.NPart[1] = uint32(len(x))
 
 		headerSize := int32(unsafe.Sizeof(*hd))

@@ -13,6 +13,7 @@ import (
 type Snapshot interface {
 	Files() int // Number of files in the snapshot
 	Header() *Header // Header contains basic information about the snapshot
+	RawHeader(i int) []byte // Return the bytes of the original header block.
 	UpdateHeader(hd *Header) // Change the header to a new one.
 	UniformMass() bool // True if all particles are the same mass.
 

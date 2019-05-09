@@ -1,6 +1,7 @@
 package snapshot
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -119,6 +120,12 @@ func (snap *lvecSnapshot) Files() int {
 // Header returns the header for the snapshot.
 func (snap *lvecSnapshot) Header() *Header {
 	return &snap.hd.Hd
+}
+
+func (snap *lvecSnapshot) RawHeader(idx int) []byte {
+	buf := &bytes.Buffer{ }
+	binary.Write(buf, binary.LittleEndian, snap.hd)
+	return buf.Bytes()
 }
 
 // UpdateHeader replaces the snapshot's header with new values. This does not
