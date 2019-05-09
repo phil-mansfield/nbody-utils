@@ -1,7 +1,6 @@
 package snapshot
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -37,6 +36,8 @@ type lvecHeader struct {
 	Cells uint64 // The number of file-sized cells on one side of the
 	             // Lagrangian grid.
 
+	RawHeaderBytes uint64 // Number of bytes in the raw header block.
+
 	SubCells           uint64 // The number of sub-cells used inside this file.
 	SubCellVectorsMin  uint64 // 
 	SubCellVectorsBits uint64 // Number of bits used to represent the vectors to
@@ -52,9 +53,10 @@ type lvecHeader struct {
 	Delta     float64 // The user-specified delta parameter. Each component of
                       // each vector will be stored to at least this accuracy.
 
-	Offsets [4]uint64 // The offsets to the start of the sub-cell vector block,
-	                  // the bits block, and the data block, respetively. This
-	                  // isn't neccessary, but it sure is convenient.
+	Offsets [5]uint64 // The offsets to the start of the raw header block the
+	                  // sub-cell vector block, the bits block, and the data
+	                  // block, respetively. This isn't neccessary, but it sure
+	                  // is convenient.
 
 	Hd Header // The header for the simulation.
 }
@@ -123,9 +125,15 @@ func (snap *lvecSnapshot) Header() *Header {
 }
 
 func (snap *lvecSnapshot) RawHeader(idx int) []byte {
-	buf := &bytes.Buffer{ }
-	binary.Write(buf, binary.LittleEndian, snap.hd)
-	return buf.Bytes()
+	f, err := os.Open(snap.xNames[idx])	
+	if err != nil { panic(err.Error()) }
+	_, err = f.Seek(int64(snap.hd.Offsets[1]), 0)
+	if err != nil { panic(err.Error()) }
+
+	buf, err := readRawHeaderBlock(f, &snap.hd)
+	if err != nil { panic(err.Error()) }
+	
+	return buf
 }
 
 // UpdateHeader replaces the snapshot's header with new values. This does not
@@ -370,13 +378,15 @@ func ConvertToLVec(
 		Hd: *hd,
 	}
 	
+	rawHd := snap.RawHeader(0)
+
 	grid, err := XGrid(snap, int(cells*subCells))
 	lvHeader.Limits = [2]float64{0, hd.L}
 	lvHeader.VarType = lvecX
 	lvHeader.Delta = dx
 	lvHeader.Pix = minPix(lvHeader.Limits, lvHeader.Delta)
 
-	err = generateLVec(lvHeader, grid, dir, fnameFormat)
+	err = generateLVec(lvHeader, rawHd, grid, dir, fnameFormat)
 	if err != nil { return err }
 
 	runtime.GC()
@@ -387,7 +397,7 @@ func ConvertToLVec(
 	lvHeader.Delta = dv
 	lvHeader.Pix = minPix(lvHeader.Limits, lvHeader.Delta)
 
-	err = generateLVec(lvHeader, grid, dir, fnameFormat)
+	err = generateLVec(lvHeader, rawHd, grid, dir, fnameFormat)
 	if err != nil { return err }
 
 	return nil
@@ -396,6 +406,7 @@ func ConvertToLVec(
 // generateLVec generates all the LVec files associated with the data in grid.
 func generateLVec(
 	hd *lvecHeader,
+	rawHd []byte,
 	grid *VectorGrid,
 	dir, fnameFormat string,
 ) error {
@@ -431,7 +442,9 @@ func generateLVec(
 			subCellVecs, 0, false,
 		)
 
-		err := writeLVecFile(fnames[c], hd, subCellVecsArray, bitsArray, arrays)
+		err := writeLVecFile(
+			fnames[c], hd, rawHd, subCellVecsArray, bitsArray, arrays,
+		)
 		if err != nil { panic(err.Error()) } // .___.
 	})
 
@@ -472,7 +485,9 @@ func loadArray(
 
 // writeLVecFile writes an LVec file to disk
 func writeLVecFile(
-	fname string, hd *lvecHeader,
+	fname string,
+	hd *lvecHeader,
+	rawHd []byte,
 	subCellVecs *container.DenseArray,
 	bits *container.DenseArray, 
 	arrays []*container.DenseArray,
@@ -485,12 +500,16 @@ func writeLVecFile(
 	for _, a := range arrays { totalArrayData += uint64(len(a.Data)) }
 
 	hd.Offsets[0] = uint64(unsafe.Sizeof(*hd)) + 8
-	hd.Offsets[1] = uint64(len(subCellVecs.Data)) + 8 + hd.Offsets[0]
-	hd.Offsets[2] = uint64(len(bits.Data)) + 8 + hd.Offsets[1]
-	hd.Offsets[3] = uint64(totalArrayData) + 8 + hd.Offsets[2]
+	hd.Offsets[1] = hd.Offsets[0] + uint64(len(rawHd))
+	hd.Offsets[2] = uint64(len(subCellVecs.Data)) + 8 + hd.Offsets[0]
+	hd.Offsets[3] = uint64(len(bits.Data)) + 8 + hd.Offsets[1]
+	hd.Offsets[4] = uint64(totalArrayData) + 8 + hd.Offsets[2]
 	fortranCheck(hd.Offsets)
 
 	err = writeHeaderBlock(f, hd)
+	if err != nil { return err }
+
+	err = writeRawHeaderBlock(f, hd, rawHd)
 	if err != nil { return err }
 
 	err = writeSubCellVecsBlock(f, hd, subCellVecs)
@@ -563,12 +582,47 @@ func readHeaderBlock(f *os.File) (*lvecHeader, error) {
 	return hd, nil
 }
 
+// writeHeaderBlock writes the first LVec block, the header.
+func writeRawHeaderBlock(f *os.File, hd *lvecHeader, buf []byte) error {
+	offsetCheck(f, hd.Offsets[0], "raw header", "start")
+
+	err := binary.Write(f, binary.LittleEndian, int32(len(buf)))
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, buf)
+	if err != nil { return err }
+	err = binary.Write(f, binary.LittleEndian, int32(len(buf)))
+	if err != nil { return err }
+
+	return nil
+}
+
+// readHeaderBlock reads the first LVec bloc, the header.
+func readRawHeaderBlock(f *os.File, hd *lvecHeader) ([]byte, error) {
+	offsetCheck(f, hd.Offsets[0], "raw header", "start")
+
+	fortran := [2]int32{ }
+	buf := make([]byte, hd.RawHeaderBytes)
+	
+	err := binary.Read(f, binary.LittleEndian, &fortran[0])
+	if err != nil { return nil, err }
+	_, err = io.ReadFull(f, buf)
+	if err != nil { return nil, err }
+	err = binary.Read(f, binary.LittleEndian, &fortran[1])
+	if err != nil { return nil, err }
+
+	fortranHeaderCheck(fortran, int(len(buf)), "raw header")
+	offsetCheck(f, hd.Offsets[1], "raw header", "end")
+
+	return buf, nil
+}
+
+
 // writeHeaderBlock writes the second LVec block, the quantized vectors to every
 // sub-cell.
 func writeSubCellVecsBlock(
 	f *os.File, hd *lvecHeader, subCellVecs *container.DenseArray,
 ) error {
-	offsetCheck(f, hd.Offsets[0], "vector", "start")
+	offsetCheck(f, hd.Offsets[1], "vector", "start")
 
 	err := binary.Write(f, binary.LittleEndian, int32(len(subCellVecs.Data)))
 	if err != nil { return err }
@@ -577,7 +631,7 @@ func writeSubCellVecsBlock(
 	err = binary.Write(f, binary.LittleEndian, int32(len(subCellVecs.Data)))
 	if err != nil { return err }
 
-	offsetCheck(f, hd.Offsets[1], "vector", "end")
+	offsetCheck(f, hd.Offsets[2], "vector", "end")
 
 	return nil
 }
@@ -586,7 +640,7 @@ func writeSubCellVecsBlock(
 func readSubCellVecsBlock(
 	f *os.File, hd *lvecHeader,
 ) (*container.DenseArray, error) {
-	offsetCheck(f, hd.Offsets[0], "vector", "start")
+	offsetCheck(f, hd.Offsets[1], "vector", "start")
 
 	fortran := [2]int32{ }
 	nSub := hd.SubCells*hd.SubCells*hd.SubCells
@@ -600,7 +654,7 @@ func readSubCellVecsBlock(
 	if err != nil { return nil, err }
 
 	fortranHeaderCheck(fortran, len(array.Data), "vector")
-	offsetCheck(f, hd.Offsets[1], "vector", "end")
+	offsetCheck(f, hd.Offsets[2], "vector", "end")
 
 	return array, nil
 }
@@ -609,7 +663,7 @@ func readSubCellVecsBlock(
 func writeBitsBlock(
 	f *os.File, hd *lvecHeader, bits *container.DenseArray,
 ) error {
-	offsetCheck(f, hd.Offsets[1], "bits", "start")
+	offsetCheck(f, hd.Offsets[2], "bits", "start")
 
 	err := binary.Write(f, binary.LittleEndian, int32(len(bits.Data)))
 	if err != nil { return err }
@@ -618,7 +672,7 @@ func writeBitsBlock(
 	err = binary.Write(f, binary.LittleEndian, int32(len(bits.Data)))
 	if err != nil { return err }
 
-	offsetCheck(f, hd.Offsets[2], "bits", "end")
+	offsetCheck(f, hd.Offsets[3], "bits", "end")
 
 	return nil
 }
@@ -627,7 +681,7 @@ func writeBitsBlock(
 func readBitsBlock(
 	f *os.File, hd *lvecHeader,
 ) (*container.DenseArray, error) {
-	offsetCheck(f, hd.Offsets[1], "bits", "start")
+	offsetCheck(f, hd.Offsets[2], "bits", "start")
 
 	fortran := [2]int32{ }
 	nSub := hd.SubCells*hd.SubCells*hd.SubCells
@@ -641,7 +695,7 @@ func readBitsBlock(
 	if err != nil { return nil, err }
 
 	fortranHeaderCheck(fortran, len(array.Data), "bits")
-	offsetCheck(f, hd.Offsets[2], "bits", "end")
+	offsetCheck(f, hd.Offsets[3], "bits", "end")
 
 	return array, nil
 }
@@ -651,7 +705,7 @@ func readBitsBlock(
 func writeArraysBlock(
 	f *os.File, hd *lvecHeader, arrays []*container.DenseArray,
 ) error {
-	offsetCheck(f, hd.Offsets[2], "array", "start")
+	offsetCheck(f, hd.Offsets[3], "array", "start")
 
 	totalArrayData := uint64(0)
 	for _, a := range arrays { totalArrayData += uint64(len(a.Data)) }
@@ -665,7 +719,7 @@ func writeArraysBlock(
 	err = binary.Write(f, binary.LittleEndian, int32(totalArrayData))
 	if err != nil { return err }
 
-	offsetCheck(f, hd.Offsets[3], "array", "end")
+	offsetCheck(f, hd.Offsets[4], "array", "end")
 
 	return nil
 }
@@ -675,7 +729,7 @@ func writeArraysBlock(
 func readArraysBlock(
 	f *os.File, hd *lvecHeader, bits []uint64,
 ) ([]*container.DenseArray, error) {
-	offsetCheck(f, hd.Offsets[2], "array", "start")
+	offsetCheck(f, hd.Offsets[3], "array", "start")
 
 	fortran := [2]int32{ }
 
@@ -699,14 +753,14 @@ func readArraysBlock(
 	for _, array := range arrays { totalArrayData += len(array.Data) }
 
 	fortranHeaderCheck(fortran, totalArrayData, "array")
-	offsetCheck(f, hd.Offsets[3], "array", "end")
+	offsetCheck(f, hd.Offsets[4], "array", "end")
 
 	return arrays, nil
 }
 
 // fortranCheck ensures that all file blocks are small enough that they can have
 // valid header/footer ints in Fortran. It panics if this is not true.
-func fortranCheck(offsets [4]uint64) {
+func fortranCheck(offsets [5]uint64) {
 	headerSize := offsets[0] - 8
 	subCellVecsSize := offsets[1] - offsets[0] - 8
 	bitsSize := offsets[2] - offsets[1] - 8
