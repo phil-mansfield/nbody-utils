@@ -436,7 +436,7 @@ func checkTestQuantizedSnapshot(snap Snapshot, t *testing.T) {
 	mpLvec, err := snap.ReadMp(0)
 	if err != nil { panic(err.Error()) }
 	for i := range mpLvec {
-		if mpLvec[i] != float32(1e10) {
+		if !floatEq(mpLvec[i], 8.3255525e+10, 1e6) {
 			t.Fatalf("lvec.Mp[%d] = %g", i, mpLvec[i])
 		}
 	}
@@ -484,6 +484,29 @@ func TestMockLVec(t *testing.T) {
 	if err != nil { panic(err.Error()) }
 
 	checkTestQuantizedSnapshot(lvec, t)
+}
+
+func TestGadgetToLVecToGadget(t *testing.T) {
+	lgHd := writeTestLGadget2Snapshot()
+	
+	lgadget2, err := LGadget2("test_lgadget2_data")
+	if err != nil { panic(err.Error()) }
+	
+	err = ConvertToLVec(
+		lgadget2, 1, 2, 0.1, 0.01, "test_lvec_data","test.%s.%d.lvec",
+	)
+	if err != nil { panic(err.Error())  }
+	
+	lvec, err := LVec("test_lvec_data", "test.%s.%d.lvec")
+	if err != nil { panic(err.Error()) }
+	
+	err = WriteLGadget2("test_lgadget_quantized", "test.%03d", lvec, lgHd)
+	if err != nil { panic(err.Error()) }
+
+	lgadget2, err = LGadget2("test_lgadget_quantized")
+	if err != nil { panic(err.Error()) }
+
+	checkTestQuantizedSnapshot(lgadget2, t)
 }
 
 func floatEq(x, y, eps float32) bool {

@@ -13,7 +13,7 @@ func newTestMockSnapshot() Snapshot {
 		OmegaM: 0.3, OmegaL: 0.7, H100: 0.7,
 		L: 10, Epsilon: 0.1,
 		NSide: int64(nSide), NTotal: int64(nSide3),
-		UniformMp: 1e10,
+		UniformMp: 8.3255525e+10,
 	}
 
 	x := [][][3]float32{ make([][3]float32, nSide3) }
@@ -35,13 +35,13 @@ func newTestMockSnapshot() Snapshot {
 	return NewMockSnapshot(hd, x, v, id)
 }
 
-func writeTestLGadget2Snapshot() {
+func writeTestLGadget2Snapshot() *lGadget2Header {
 	nSide := 10
 	nSide3 := nSide*nSide*nSide
 
 	lgHd := &lGadget2Header{
-		NPart:      [6]uint32{0, uint32(nSide3), 0, 0, 0, 0},
-		NPartTotal: [6]uint32{1, 1, 1, 1, 1, 1},
+		NPartTotal:      [6]uint32{0, uint32(nSide3), 0, 0, 0, 0},
+		NPart: [6]uint32{1, 1, 1, 1, 1, 1},
 		Mass: [6]float64{0, 1e10, 0, 0, 0, 0},
 		Time: 0.5, Redshift: 1,
 		BoxSize: 10, Omega0: 0.3, OmegaLambda: 0.7, HubbleParam: 0.7,
@@ -49,6 +49,8 @@ func writeTestLGadget2Snapshot() {
 	
 	snap := newTestMockSnapshot()
 	WriteLGadget2("test_lgadget2_data", "test.%03d", snap, lgHd)
+
+	return lgHd
 }
 
 func TestReadWriteLGadget2(t *testing.T) {
