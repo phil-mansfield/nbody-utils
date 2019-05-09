@@ -4,19 +4,10 @@ import (
 	"testing"
 )
 
-
-func TestReadWriteLGadget2(t *testing.T) {
+func newTestMockSnapshot() Snapshot {
 	nSide := 10
 	nSide3 := nSide*nSide*nSide
 
-	lgHd := &lGadget2Header{
-		NPart:      [6]uint32{0, uint32(nSide3), 0, 0, 0, 0},
-		NPartTotal: [6]uint32{1, 1, 1, 1, 1, 1},
-		Mass: [6]float64{0, 1e10, 0, 0, 0, 0},
-		Time: 0.5, Redshift: 1,
-		BoxSize: 10, Omega0: 0.3, OmegaLambda: 0.7, HubbleParam: 0.7,
-	}
-	
 	hd := &Header{
 		Z: 1, Scale: 0.5,
 		OmegaM: 0.3, OmegaL: 0.7, H100: 0.7,
@@ -41,32 +32,56 @@ func TestReadWriteLGadget2(t *testing.T) {
 		}
 	}
 
-	snap := NewMockSnapshot(hd, x, v, id)
+	return NewMockSnapshot(hd, x, v, id)
+}
+
+func writeTestLGadget2Snapshot() {
+	nSide := 10
+	nSide3 := nSide*nSide*nSide
+
+	lgHd := &lGadget2Header{
+		NPart:      [6]uint32{0, uint32(nSide3), 0, 0, 0, 0},
+		NPartTotal: [6]uint32{1, 1, 1, 1, 1, 1},
+		Mass: [6]float64{0, 1e10, 0, 0, 0, 0},
+		Time: 0.5, Redshift: 1,
+		BoxSize: 10, Omega0: 0.3, OmegaLambda: 0.7, HubbleParam: 0.7,
+	}
+	
+	snap := newTestMockSnapshot()
 	WriteLGadget2("test_lgadget2_data", "test.%03d", snap, lgHd)
+}
+
+func TestReadWriteLGadget2(t *testing.T) {
+	writeTestLGadget2Snapshot()
+	snap := newTestMockSnapshot()
+
 	lsnap, err := LGadget2("test_lgadget2_data")
 	if err != nil { panic(err.Error()) }
 
+	x, _ := snap.ReadX(0)
 	lx, err := lsnap.ReadX(0)
 	if err != nil { panic(err.Error()) }
 	for i := range lx {
-		if !vecEq(lx[i], x[0][i], 1e-4) {
-			t.Errorf("snap.X[%d] = %g, not %g", i, lx[i], x[0][i])
+		if !vecEq(lx[i], x[i], 1e-4) {
+			t.Errorf("snap.X[%d] = %g, not %g", i, lx[i], x[i])
 		}
 	}
 
+	v, _ := snap.ReadV(0)
 	lv, err := lsnap.ReadV(0)
 	if err != nil { panic(err.Error()) }
 	for i := range lv {
-		if !vecEq(lv[i], v[0][i], 1e-4) {
-			t.Errorf("snap.V[%d] = %g, not %g", i, lv[i], v[0][i])
+		if !vecEq(lv[i], v[i], 1e-4) {
+			t.Errorf("snap.V[%d] = %g, not %g", i, lv[i], v[i])
 		}
 	}
 
+	id, _ := snap.ReadID(0)
 	lid, err := lsnap.ReadID(0)
 	if err != nil { panic(err.Error()) }
 	for i := range lid {
-		if id[0][i] != lid[i] {
-			t.Errorf("snap.ID[%d] = %d, not %d", i, id[0][i], lid[i])
+		if id[i] != lid[i] {
+			t.Errorf("snap.ID[%d] = %d, not %d", i, id[i], lid[i])
 		}
 	}
 }

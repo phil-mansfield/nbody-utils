@@ -424,58 +424,26 @@ func TestLoadCell(t *testing.T) {
 	}
 }
 
-func TestMockLVec(t *testing.T) {
-	hd := &Header{
-		Z: 1.0, Scale: 0.5,
-		OmegaM:0.3, OmegaL: 0.7, H100: 0.7,
-		L: 10, Epsilon: 1,
-		NSide: 10, NTotal: 1000,
-		UniformMp: 1e10,
-	}
-
-	nSide3 := hd.NSide*hd.NSide*hd.NSide
-
-	x := [][][3]float32{ make([][3]float32, nSide3) }
-	v := [][][3]float32{ make([][3]float32, nSide3) }
-	id := [][]int64{ make([]int64, nSide3) }
-
-	i := 0
-	for iz := 0; iz < int(hd.NSide); iz++ {
-		for iy := 0; iy < int(hd.NSide); iy++ {
-			for ix := 0; ix < int(hd.NSide); ix++ {
-				x[0][i] = [3]float32{ float32(ix), float32(iy), float32(iz) }
-				v[0][i] = [3]float32{ -float32(ix), float32(iy), -float32(iz) }
-				id[0][i] = int64(i+1)
-				i++
-			}
-		}
-	}
-
-	snap := NewMockSnapshot(hd, x, v, id)
-
-	ConvertToLVec(snap, 1, 2, 0.1, 0.01, "test_lvec_data", "test.%s.%d.lvec")
-	lvec, err := LVec("test_lvec_data", "test.%s.%d.lvec")
-	if err != nil { panic(err.Error()) }
-
-	idLvec, err := lvec.ReadID(0)
+func checkTestQuantizedSnapshot(snap Snapshot, t *testing.T) {
+	idLvec, err := snap.ReadID(0)
 	if err != nil { panic(err.Error()) }
 	for i := range idLvec {
 		if idLvec[i] != int64(i) {
-			t.Errorf("lvec.ID[%d] = %d", i, idLvec[i])
+			t.Fatalf("lvec.ID[%d] = %d", i, idLvec[i])
 		}
 	}
 
-	mpLvec, err := lvec.ReadMp(0)
+	mpLvec, err := snap.ReadMp(0)
 	if err != nil { panic(err.Error()) }
 	for i := range mpLvec {
 		if mpLvec[i] != float32(1e10) {
-			t.Errorf("lvec.Mp[%d] = %g", i, mpLvec[i])
+			t.Fatalf("lvec.Mp[%d] = %g", i, mpLvec[i])
 		}
 	}
 
-	xLvec, err := lvec.ReadX(0)
+	xLvec, err := snap.ReadX(0)
 	if err != nil { panic(err.Error()) }
-	i = 0
+	i := 0
 	for iz := 0; iz < 10; iz++ {
 		for iy := 0; iy < 10; iy++ {
 			for ix := 0; ix < 10; ix++ {
@@ -483,14 +451,14 @@ func TestMockLVec(t *testing.T) {
 				if !floatEq(vec[0], float32(ix), 0.1) && 
 					!floatEq(vec[1], float32(iy), 0.1) && 
 					!floatEq(vec[2], float32(iz), 0.1) {
-					t.Errorf("lvec.X[%d] = %f", i, vec)
+					t.Fatalf("lvec.X[%d] = %f", i, vec)
 				}
 				i++
 			}
 		}
 	}
 
-	vLvec, err := lvec.ReadV(0)
+	vLvec, err := snap.ReadV(0)
 	if err != nil { panic(err.Error()) }
 	i = 0
 	for iz := 0; iz < 10; iz++ {
@@ -500,12 +468,22 @@ func TestMockLVec(t *testing.T) {
 				if !floatEq(vec[0], -float32(ix), 0.01) && 
 					!floatEq(vec[1], float32(iy), 0.01) && 
 					!floatEq(vec[2], -float32(iz), 0.01) {
-					t.Errorf("lvec.V[%d] = %f", i, vec)
+					t.Fatalf("lvec.V[%d] = %f", i, vec)
 				}
 				i++
 			}
 		}
 	}
+}
+
+func TestMockLVec(t *testing.T) {
+	snap := newTestMockSnapshot()
+
+	ConvertToLVec(snap, 1, 2, 0.1, 0.01, "test_lvec_data", "test.%s.%d.lvec")
+	lvec, err := LVec("test_lvec_data", "test.%s.%d.lvec")
+	if err != nil { panic(err.Error()) }
+
+	checkTestQuantizedSnapshot(lvec, t)
 }
 
 func floatEq(x, y, eps float32) bool {
