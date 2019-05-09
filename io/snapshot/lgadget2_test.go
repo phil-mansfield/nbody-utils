@@ -1,10 +1,6 @@
 package snapshot
 
 import (
-	"bytes"
-	"encoding/binary"
-	"fmt"
-
 	"testing"
 )
 

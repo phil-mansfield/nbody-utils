@@ -1,6 +1,7 @@
 package snapshot
 
 import (
+	"bytes"
 	"io/ioutil"
 	"math"
 	"os"
@@ -18,6 +19,7 @@ var testHeader = &lvecHeader{
 	Method: lvecBoxMethod,
 	Idx: 1,
 	Cells: 3,
+	RawHeaderBytes: 5,
 	SubCells: 2,
 	SubCellVectorsMin: 0,
 	SubCellVectorsBits: 0,
@@ -26,7 +28,7 @@ var testHeader = &lvecHeader{
 	Pix: 100,
 	Limits: [2]float64{0, 50},
 	Delta: 1.0,
-	Offsets: [4]uint64{8 + uint64(unsafe.Sizeof(lvecHeader{})), 0, 0, 0},
+	Offsets: [5]uint64{8 + uint64(unsafe.Sizeof(lvecHeader{})), 0, 0, 0},
 	Hd: Header{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 },
 }
 
@@ -38,6 +40,7 @@ func lvecHeaderEq(hd1, hd2 *lvecHeader) bool {
 		hd1.Idx == hd2.Idx &&
 		hd1.Cells == hd2.Cells &&
 		hd1.SubCells == hd2.SubCells &&
+		hd1.RawHeaderBytes == hd2.RawHeaderBytes &&
 		hd1.SubCellVectorsMin == hd2.SubCellVectorsMin &&
 		hd1.SubCellVectorsBits == hd2.SubCellVectorsBits &&
 		hd1.BitsMin == hd2.BitsMin &&
@@ -49,6 +52,7 @@ func lvecHeaderEq(hd1, hd2 *lvecHeader) bool {
 		hd1.Offsets[1] == hd2.Offsets[1] &&
 		hd1.Offsets[2] == hd2.Offsets[2] &&
 		hd1.Offsets[3] == hd2.Offsets[3] &&
+		hd1.Offsets[4] == hd2.Offsets[4] &&
 		headerEq(&hd1.Hd, &hd2.Hd)
 }
 
@@ -85,11 +89,15 @@ func TestBlockIO(t *testing.T) {
 	defer f.Close()
 
 	hd := *testHeader
+
+	rawHeader := []byte{1, 2, 3, 4, 5}
+	hd.Offsets[1] = hd.Offsets[0] + 8 + uint64(len(rawHeader))
+
 	vecs := make([]uint64, 3 * hd.SubCells*hd.SubCells*hd.SubCells)
 	for i := range vecs { vecs[i] = uint64(i) + 10 }
 	hd.SubCellVectorsMin, hd.SubCellVectorsBits = 10, 4
 	vecArray := container.NewDenseArray(int(hd.SubCellVectorsBits), vecs)
-	hd.Offsets[1] = hd.Offsets[0] + 8 + uint64(len(vecArray.Data))
+	hd.Offsets[2] = hd.Offsets[1] + 8 + uint64(len(vecArray.Data))
 	
 	hd.BitsMin, hd.BitsBits = 6, 5
 	nElem := uint64(hd.Hd.NSide) / (hd.Cells*hd.SubCells)
@@ -99,7 +107,7 @@ func TestBlockIO(t *testing.T) {
 	bits := make([]uint64, 3 * nSubCells3)
 	for i := range bits { bits[i] = uint64(i) + 6 }
 	bitsArray := container.NewDenseArray(int(hd.BitsBits), bits)
-	hd.Offsets[2] = hd.Offsets[1] + 8 + uint64(len(bitsArray.Data))
+	hd.Offsets[3] = hd.Offsets[2] + 8 + uint64(len(bitsArray.Data))
 
 	arrays := make([]*container.DenseArray, 3*nSubCells3)
 	k, totalLen := uint64(0), uint64(0)
@@ -114,11 +122,14 @@ func TestBlockIO(t *testing.T) {
 		totalLen += uint64(len(arrays[i].Data))
 	}
 
-	hd.Offsets[3] = hd.Offsets[2] + 8 + totalLen
+	hd.Offsets[4] = hd.Offsets[3] + 8 + totalLen
 
 	err = writeHeaderBlock(f, &hd)
 	if err != nil { t.Fatalf(err.Error()) }
-	
+
+	err = writeRawHeaderBlock(f, &hd, rawHeader)
+	if err != nil { t.Fatalf(err.Error()) }
+
 	err = writeSubCellVecsBlock(f, &hd, vecArray)
 	if err != nil { t.Fatalf(err.Error()) }
 
@@ -137,6 +148,13 @@ func TestBlockIO(t *testing.T) {
 		t.Errorf("written header, %v, not the same as the written header, %v",
 			&hd, rdHd,
 		)
+	}
+
+	rdRawHeader, err := readRawHeaderBlock(f, &hd) 
+	if err != nil { t.Fatalf(err.Error()) }
+
+	if !bytes.Equal(rdRawHeader, rawHeader) {
+		t.Errorf("Wrote raw header %v, but got %v", rawHeader, rdRawHeader)
 	}
 
 	rdVecArray, err := readSubCellVecsBlock(f, &hd)

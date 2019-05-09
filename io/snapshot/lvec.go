@@ -379,6 +379,7 @@ func ConvertToLVec(
 	}
 	
 	rawHd := snap.RawHeader(0)
+	lvHeader.RawHeaderBytes = uint64(len(rawHd))
 
 	grid, err := XGrid(snap, int(cells*subCells))
 	lvHeader.Limits = [2]float64{0, hd.L}
@@ -500,10 +501,11 @@ func writeLVecFile(
 	for _, a := range arrays { totalArrayData += uint64(len(a.Data)) }
 
 	hd.Offsets[0] = uint64(unsafe.Sizeof(*hd)) + 8
-	hd.Offsets[1] = hd.Offsets[0] + uint64(len(rawHd))
-	hd.Offsets[2] = uint64(len(subCellVecs.Data)) + 8 + hd.Offsets[0]
-	hd.Offsets[3] = uint64(len(bits.Data)) + 8 + hd.Offsets[1]
-	hd.Offsets[4] = uint64(totalArrayData) + 8 + hd.Offsets[2]
+	hd.Offsets[1] = uint64(len(rawHd)) + 8 + hd.Offsets[0]
+	hd.Offsets[2] = uint64(len(subCellVecs.Data)) + 8 + hd.Offsets[1]
+	hd.Offsets[3] = uint64(len(bits.Data)) + 8 + hd.Offsets[2]
+	hd.Offsets[4] = uint64(totalArrayData) + 8 + hd.Offsets[3]
+
 	fortranCheck(hd.Offsets)
 
 	err = writeHeaderBlock(f, hd)
@@ -533,6 +535,9 @@ func readLVecFile(fname string) (
 	if err != nil { return nil, nil, nil, err }
 
 	hd, err = readHeaderBlock(f)
+	if err != nil { return nil, nil, nil, err }
+
+	_, err = readRawHeaderBlock(f, hd)
 	if err != nil { return nil, nil, nil, err }
 
 	subCellVecs, err = readSubCellVecsBlock(f, hd)
