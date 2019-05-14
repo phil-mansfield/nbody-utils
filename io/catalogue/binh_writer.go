@@ -483,10 +483,10 @@ func TextToBinh(
 			runtime.GC()
 
 			if isInt[col] {
-				vals := ar.IntOrder(ar.IntCut(ibuf[bufIdx[col]], cut), order)
+				vals := ar.IntCut(ibuf[bufIdx[col]], cut)
 				colTypes[col], colKeys[col] = intColumnType(vals)
 			} else {
-				vals := ar.Order(ar.Cut(fbuf[bufIdx[col]], cut), order)
+				vals := ar.Cut(fbuf[bufIdx[col]], cut)
 				if isLog[col] {
 					colTypes[col], colKeys[col] = logFloat64ColumnType(
 						vals, deltas[col],
@@ -511,10 +511,10 @@ func TextToBinh(
 			runtime.GC()
 
 			if isInt[col] {
-				vals := ar.IntOrder(ar.IntCut(ibuf[bufIdx[col]], cut), order)
+				vals := ar.IntCut(ibuf[bufIdx[col]], cut)
 				enc.EncodeInts(colTypes[col], vals, wr)
 			} else {
-				vals := ar.Order(ar.Cut(fbuf[bufIdx[col]], cut), order)
+				vals := ar.Cut(fbuf[bufIdx[col]], cut)
 				enc.EncodeFloat64s(
 					colTypes[col], deltas[col], vals, wr,
 				)
@@ -547,9 +547,6 @@ func newBinhHeader(inName string, blocks int, config BinhConfig) *BinhHeader {
 		name := strings.ToLower(strings.Trim(config.SkipColumns[i], " "))
 		hd.ColumnSkipped[hd.ColumnLookup[name]] = 1
 	}
-
-	isSorted := int64(0)
-	if config.Sort { isSorted = 1 }
 	
 	hd.BinhFixedWidthHeader = BinhFixedWidthHeader{
 		Version: BinhVersion,
@@ -560,7 +557,6 @@ func newBinhHeader(inName string, blocks int, config BinhConfig) *BinhHeader {
 		TextHeaderLength: int64(len(hd.TextHeader)),
 		TextColumnNamesLength: int64(len(hd.TextColumnNames)),
 		MinMass: float64(config.MinParticles)*config.ParticleMass,
-		IsSorted: isSorted,
 	}
 	
 	return hd

@@ -341,8 +341,6 @@ func TestNewBinhHeader(t *testing.T) {
 	case hd.TextColumnNamesLength != 15:
 		t.Errorf("TextColumnNamesLength = %d, not %d", 
 			hd.TextColumnNamesLength, 15)
-	case hd.IsSorted != 1:
-		t.Errorf("IsSorted = %d, not %d", hd.IsSorted, 1)
 	case hd.MinMass != 1e10:
 		t.Errorf("MinMass = %g not %g", hd.MinMass, 1e10)
 	case !float64sEq(hd.Deltas, []float64{0, 0.01, 0.01, 1}):
@@ -397,8 +395,6 @@ func TestReadBinhHeader(t *testing.T) {
 	case hd.TextColumnNamesLength != 15:
 		t.Errorf("TextColumnNamesLength = %d, not %d", 
 			hd.TextColumnNamesLength, 15)
-	case hd.IsSorted != 1:
-		t.Errorf("IsSorted = %d, not %d", hd.IsSorted, 1)
 	case hd.MinMass != 1e10:
 		t.Errorf("MinMass = %g not %g", hd.MinMass, 1e10)
 	case !float64sEq(hd.Deltas, []float64{0, 0.01, 0.01, 1}):
@@ -435,9 +431,9 @@ func TestBlockHeaderOffsets(t *testing.T) {
 	hd := readBinhHeader(rd)
 
 	offsets := blockHeaderOffsets(rd, hd)
-	if !intsEq(offsets, []int{183, 258}) {
+	if !intsEq(offsets, []int{175, 250}) {
 		t.Errorf("Got block offsets = %d, expected %d",
-			offsets, []int{183, 258})
+			offsets, []int{175, 250})
 	}
 }
 
@@ -456,9 +452,9 @@ func TestNewBinhReader(t *testing.T) {
 
 	rd := newBinhReader("test_files/binh_test.binh")
 
-	if !intsEq(rd.blockOffsets, []int{255, 330}) {
+	if !intsEq(rd.blockOffsets, []int{247, 322}) {
 		t.Errorf("got blockOffsets = %d, not %d",
-			rd.blockOffsets, []int{255, 330})
+			rd.blockOffsets, []int{247, 322})
 	}
 
 	if rd.Blocks() != 2 {
@@ -498,23 +494,24 @@ func TestBinhReadFloat64s(t *testing.T) {
 	x1, mvir1 := block1[0], block1[1]
 	mvir, x := all[0], all[1]
 
-	if !float64sAlmostEq(x, []float64{150, 100, 130, 125}, 1) {
-		t.Errorf("Got %g, expected %d", x, []float64{150, 100, 130, 125})
+	if !float64sAlmostEq(x, []float64{150, 125, 130, 100}, 1) {
+		t.Errorf("Got %.3g, expected %.3g", x, []float64{150, 125, 130, 100})
 	}
 	if !float64sAlmostEq(x0, []float64{150}, 1) {
-		t.Errorf("Got %g, expected %d", x0, []float64{150})
+		t.Errorf("Got %.3g, expected %.3g", x0, []float64{150})
 	}
-	if !float64sAlmostEq(x1, []float64{100, 130, 125}, 1) {
-		t.Errorf("Got %g, expected %d", x1, []float64{100, 130, 125})
+	if !float64sAlmostEq(x1, []float64{125, 130, 100}, 1) {
+		t.Errorf("Got %.3g, expected %.3g", x1, []float64{125, 130, 100})
 	}
-	if !logFloat64sAlmostEq(mvir, []float64{1e12, 1e13, 1e11, 1e10}, 0.01) {
-		t.Errorf("Got %g, expected %d", mvir, []float64{1e12, 1e13, 1e11, 1e10})
+	if !logFloat64sAlmostEq(mvir, []float64{1e12, 1e10, 1e11, 1e13}, 0.01) {
+		t.Errorf("Got %.3g, expected %.3g", mvir,
+			[]float64{1e12, 1e10, 1e11, 1e13})
 	}
 	if !logFloat64sAlmostEq(mvir0, []float64{1e12}, 0.01) {
-		t.Errorf("Got %g, expected %d", mvir0, []float64{1e12})
+		t.Errorf("Got %.3g, expected %.3g", mvir0, []float64{1e12})
 	}
-	if !logFloat64sAlmostEq(mvir1, []float64{1e13, 1e11, 1e10}, 0.01) {
-		t.Errorf("Got %g, expected %d", mvir1, []float64{1e13, 1e11, 1e10})
+	if !logFloat64sAlmostEq(mvir1, []float64{1e10, 1e11, 1e13}, 0.01) {
+		t.Errorf("Got %.3g, expected %.3g", mvir1, []float64{1e13, 1e11, 1e10})
 	}
 }
 
