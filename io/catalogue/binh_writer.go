@@ -16,6 +16,8 @@ import (
 	ar "github.com/phil-mansfield/nbody-utils/array"
 )
 
+var BinhVerbose = false
+
 type BinhConfig struct {
 	ParticleMass float64
 	MinParticles int64
@@ -754,6 +756,7 @@ func logFloat64ColumnType(x []float64, delta float64) (
 }
 
 func checkMem(s string) {
+	if !BinhVerbose { return }
 	log.Println(s)
 	ms := runtime.MemStats{ }
 	runtime.ReadMemStats(&ms)
