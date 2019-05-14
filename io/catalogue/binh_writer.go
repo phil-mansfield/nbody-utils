@@ -393,7 +393,7 @@ func (enc *BinhEncoder) DecodeFloat32s(
 ////////////////
 
 const (
-	BinhVersion =  2
+	BinhVersion = 3
 	BinhSeed = 1337
 )
 
