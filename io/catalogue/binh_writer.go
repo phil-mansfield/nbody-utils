@@ -405,7 +405,6 @@ type BinhFixedWidthHeader struct {
 	Blocks int64 // Number of blocks in the file
 	TextHeaderLength int64 // Number of bytes in the text header
 	TextColumnNamesLength int64 // number of bytes in the 
-	IsSorted int64 // 1 if sorted, 0 otherwise
 	MinMass float64 // Approximate smallest mass stored in the file
 }
 
@@ -460,11 +459,11 @@ func TextToBinh(
 	// Write blocks one by one.
 	for block := 0; block < rd.Blocks(); block++ {
 		// Read from the text file
-		checkMem(fmt.Sprintf("Starting block %d/%d", block+1, rd.Blocks()))
-		ibuf = rd.ReadIntBlock(icols, block, ibuf)
 		checkMem(fmt.Sprintf("Reading int block %d/%d", block+1, rd.Blocks()))
-		fbuf = rd.ReadFloat64Block(fcols, block, fbuf)
+		ibuf = rd.ReadIntBlock(icols, block, ibuf)
 		checkMem(fmt.Sprintf("Reading float block %d/%d", block+1, rd.Blocks()))
+		fbuf = rd.ReadFloat64Block(fcols, block, fbuf)
+		checkMem(fmt.Sprintf(" %d/%d", block+1, rd.Blocks()))
 
 		// Set up cuts and sorting.
 		massCol := fbuf[bufIdx[config.MassColumn]]
@@ -472,14 +471,6 @@ func TextToBinh(
 		nHaloes := int64(0)
 		for i := range cut {
 			if cut[i] { nHaloes++ }
-		}
-
-		var order []int
-		if hd.IsSorted == 1 {
-			order = ar.IntReverse(ar.QuickSortIndex(ar.Cut(massCol, cut)))
-		} else {
-			order = make([]int, nHaloes)
-			for i := range order { order[i] = i }
 		}
 
 		binary.Write(wr, binary.LittleEndian, nHaloes)
